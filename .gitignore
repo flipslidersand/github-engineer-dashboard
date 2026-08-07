@@ -7,6 +7,7 @@ Thumbs.db
 # Secrets & credentials
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 client_secret*.json
@@ -35,8 +36,3 @@ data/*.png
 
 # app
 cache.db
-*.db
-.env
-.venv/
-__pycache__/
-.pytest_cache/
