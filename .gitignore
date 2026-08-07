@@ -1,0 +1,42 @@
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+
+# Secrets & credentials
+.env
+.env.*
+*.pem
+*.key
+client_secret*.json
+credentials*.json
+
+# Claude / AI
+llm_prompt_*.md
+*.llm-context.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.tox/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+*.db
+*.sqlite
+data/*.md
+data/*.png
+
+# app
+cache.db
+*.db
+.env
+.venv/
+__pycache__/
+.pytest_cache/

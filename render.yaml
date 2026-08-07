@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: github-engineer-dashboard-api
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: GITHUB_TOKEN
+        # Render Dashboard で設定（平文コミット禁止）。
+        # 未設定でも起動はするが、/api/* はリクエストごとに X-GitHub-Token が必要。
+        sync: false
+      - key: CACHE_DB
+        value: /tmp/cache.db
+      - key: CACHE_TTL_SECONDS
+        value: "300"
+      - key: CORS_ORIGINS
+        # フロントエンド URL（カンマ区切り）。Render Dashboard で設定。
+        sync: false
