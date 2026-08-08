@@ -6,6 +6,8 @@ performance benchmark.
 
 ## Phase 1 (this scaffold)
 
+- `GET /` — フロント UI 配信（`static/index.html`）。`STATIC_DIR` 未設定時はスキップ (Issue #55)
+- `GET /static/*` — 静的アセット配信（`STATIC_DIR` 設定時のみ有効）
 - `GET /healthz` — liveness (public)
 - `GET /api/rate-limit` — live GitHub rate-limit quota (Issue #1)
 - `GET /api/users/{username}/activity` — profile + recent public-event summary, cached
