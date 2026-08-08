@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Engineer Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0d1117; color: #c9d1d9; min-height: 100vh; padding: 24px;
+  }
+  h1 { font-size: 1.4rem; font-weight: 600; color: #f0f6fc; margin-bottom: 24px; }
+  h2 { font-size: 1rem; font-weight: 600; color: #f0f6fc; margin-bottom: 12px; }
+  .card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  label { display: block; font-size: 0.85rem; color: #8b949e; margin-bottom: 6px; }
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 8px 12px; background: #0d1117;
+    border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9;
+    font-size: 0.9rem; outline: none;
+  }
+  input:focus { border-color: #388bfd; }
+  .row { display: flex; gap: 12px; align-items: flex-end; }
+  .row input { flex: 1; }
+  button {
+    padding: 8px 18px; background: #238636; color: #fff; border: none;
+    border-radius: 6px; cursor: pointer; font-size: 0.9rem; white-space: nowrap;
+  }
+  button:hover { background: #2ea043; }
+  button.secondary {
+    background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
+  }
+  button.secondary:hover { background: #30363d; }
+  .rate-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px; margin-top: 4px;
+  }
+  .stat { text-align: center; }
+  .stat .value { font-size: 1.8rem; font-weight: 700; color: #f0f6fc; }
+  .stat .value.warn { color: #d29922; }
+  .stat .value.ok { color: #3fb950; }
+  .stat .label { font-size: 0.75rem; color: #8b949e; margin-top: 2px; }
+  .bar-wrap { background: #0d1117; border-radius: 4px; height: 6px; margin-top: 12px; }
+  .bar { height: 6px; border-radius: 4px; background: #3fb950; transition: width 0.4s; }
+  .bar.warn { background: #d29922; }
+  .bar.danger { background: #f85149; }
+  .activity-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px; margin-top: 8px;
+  }
+  .ev-card {
+    background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+    padding: 12px; text-align: center;
+  }
+  .ev-card .ev-count { font-size: 1.4rem; font-weight: 700; color: #58a6ff; }
+  .ev-card .ev-type { font-size: 0.78rem; color: #8b949e; margin-top: 2px; }
+  .profile { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; }
+  .profile-stats { display: flex; gap: 24px; }
+  .profile-stat .value { font-size: 1.1rem; font-weight: 600; color: #f0f6fc; }
+  .profile-stat .label { font-size: 0.75rem; color: #8b949e; }
+  .badge {
+    display: inline-block; font-size: 0.7rem; padding: 1px 7px;
+    border-radius: 10px; background: #1f6feb; color: #cae8ff; margin-left: 8px;
+    vertical-align: middle;
+  }
+  .badge.cached { background: #3d1f00; color: #e3b341; }
+  .err { color: #f85149; font-size: 0.85rem; margin-top: 8px; }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid #30363d; border-top-color: #58a6ff;
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #resetCountdown { font-size: 0.8rem; color: #8b949e; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h1>⚙️ GitHub Engineer Dashboard</h1>
+
+<!-- Token Card -->
+<div class="card">
+  <h2>GitHub Token</h2>
+  <label for="tokenInput">Personal Access Token (stored in localStorage)</label>
+  <div class="row">
+    <input type="password" id="tokenInput" placeholder="ghp_…" autocomplete="off">
+    <button onclick="saveToken()">Save</button>
+    <button class="secondary" onclick="clearToken()">Clear</button>
+  </div>
+  <div id="tokenStatus" style="font-size:0.8rem; color:#8b949e; margin-top:8px;"></div>
+</div>
+
+<!-- Rate Limit Widget -->
+<div class="card">
+  <h2>Rate Limit <button class="secondary" style="font-size:0.75rem;padding:4px 10px;margin-left:8px;" onclick="fetchRateLimit()">Refresh</button></h2>
+  <div id="rateContent"><span style="color:#8b949e;">— enter token and refresh —</span></div>
+  <div id="resetCountdown"></div>
+</div>
+
+<!-- User Activity -->
+<div class="card">
+  <h2>User Activity</h2>
+  <div class="row" style="margin-bottom:12px;">
+    <input type="text" id="usernameInput" placeholder="GitHub username" value="">
+    <button onclick="fetchActivity()">Look up</button>
+  </div>
+  <div id="activityContent"></div>
+</div>
+
+<script>
+const API = '';  // same origin
+
+// ── Token ────────────────────────────────────────────────────────────────────
+function saveToken() {
+  const v = document.getElementById('tokenInput').value.trim();
+  if (!v) return;
+  localStorage.setItem('gh_token', v);
+  document.getElementById('tokenInput').value = '•'.repeat(20);
+  setStatus('Saved ✓');
+  fetchRateLimit();
+}
+function clearToken() {
+  localStorage.removeItem('gh_token');
+  document.getElementById('tokenInput').value = '';
+  setStatus('Cleared');
+  document.getElementById('rateContent').innerHTML = '<span style="color:#8b949e;">— enter token and refresh —</span>';
+  document.getElementById('resetCountdown').textContent = '';
+}
+function setStatus(msg) {
+  document.getElementById('tokenStatus').textContent = msg;
+  setTimeout(() => { document.getElementById('tokenStatus').textContent = ''; }, 3000);
+}
+function getToken() { return localStorage.getItem('gh_token') || ''; }
+
+// ── Rate Limit ────────────────────────────────────────────────────────────────
+let resetInterval = null;
+async function fetchRateLimit() {
+  const token = getToken();
+  if (!token) { document.getElementById('rateContent').innerHTML = '<span class="err">No token saved.</span>'; return; }
+  document.getElementById('rateContent').innerHTML = '<span class="spinner"></span> Loading…';
+  try {
+    const res = await fetch(`${API}/api/rate-limit`, { headers: { 'X-GitHub-Token': token } });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.error || res.statusText); }
+    const d = await res.json();
+    renderRateLimit(d);
+  } catch (e) {
+    document.getElementById('rateContent').innerHTML = `<span class="err">Error: ${e.message}</span>`;
+  }
+}
+
+function renderRateLimit(d) {
+  const pct = d.limit > 0 ? d.remaining / d.limit : 0;
+  const barClass = pct > 0.3 ? '' : pct > 0.1 ? 'warn' : 'danger';
+  const valClass = pct > 0.3 ? 'ok' : pct > 0.1 ? 'warn' : '';
+  const barW = Math.round(pct * 100);
+  document.getElementById('rateContent').innerHTML = `
+    <div class="rate-grid">
+      <div class="stat"><div class="value ${valClass}">${d.remaining.toLocaleString()}</div><div class="label">Remaining</div></div>
+      <div class="stat"><div class="value">${d.limit.toLocaleString()}</div><div class="label">Limit</div></div>
+      <div class="stat"><div class="value">${d.used.toLocaleString()}</div><div class="label">Used</div></div>
+    </div>
+    <div class="bar-wrap"><div class="bar ${barClass}" id="ratebar" style="width:${barW}%"></div></div>`;
+  startCountdown(d.reset);
+}
+
+function startCountdown(resetEpoch) {
+  if (resetInterval) clearInterval(resetInterval);
+  function tick() {
+    const secs = Math.max(0, resetEpoch - Math.floor(Date.now() / 1000));
+    const m = Math.floor(secs / 60), s = secs % 60;
+    document.getElementById('resetCountdown').textContent =
+      secs > 0 ? `Resets in ${m}m ${s}s` : 'Resetting…';
+  }
+  tick();
+  resetInterval = setInterval(tick, 1000);
+}
+
+// ── User Activity ─────────────────────────────────────────────────────────────
+async function fetchActivity() {
+  const token = getToken();
+  const username = document.getElementById('usernameInput').value.trim();
+  if (!token) { document.getElementById('activityContent').innerHTML = '<span class="err">No token saved.</span>'; return; }
+  if (!username) { document.getElementById('activityContent').innerHTML = '<span class="err">Enter a username.</span>'; return; }
+  document.getElementById('activityContent').innerHTML = '<span class="spinner"></span> Loading…';
+  try {
+    const res = await fetch(`${API}/api/users/${encodeURIComponent(username)}/activity`,
+      { headers: { 'X-GitHub-Token': token } });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.error || res.statusText); }
+    const d = await res.json();
+    renderActivity(d);
+  } catch (e) {
+    document.getElementById('activityContent').innerHTML = `<span class="err">Error: ${e.message}</span>`;
+  }
+}
+
+function renderActivity(d) {
+  const cachedBadge = d.cached ? '<span class="badge cached">cached</span>' : '<span class="badge">live</span>';
+  const displayName = d.name ? `${d.name} (${d.username})` : d.username;
+  const events = Object.entries(d.event_counts).sort((a,b) => b[1]-a[1]);
+  const evCards = events.length
+    ? events.map(([t,c]) => `<div class="ev-card"><div class="ev-count">${c}</div><div class="ev-type">${t.replace('Event','')}</div></div>`).join('')
+    : '<span style="color:#8b949e;">No recent public events.</span>';
+  document.getElementById('activityContent').innerHTML = `
+    <div class="profile">
+      <div>
+        <strong style="font-size:1.05rem;">${displayName}</strong>${cachedBadge}
+        <div class="profile-stats" style="margin-top:8px;">
+          <div class="profile-stat"><div class="value">${d.public_repos}</div><div class="label">Repos</div></div>
+          <div class="profile-stat"><div class="value">${d.followers}</div><div class="label">Followers</div></div>
+          <div class="profile-stat"><div class="value">${d.following}</div><div class="label">Following</div></div>
+          <div class="profile-stat"><div class="value">${d.total_events}</div><div class="label">Events</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="activity-grid">${evCards}</div>`;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(function init() {
+  if (getToken()) {
+    document.getElementById('tokenInput').value = '•'.repeat(20);
+    setStatus('Token loaded from storage');
+    fetchRateLimit();
+  }
+})();
+</script>
+</body>
+</html>
