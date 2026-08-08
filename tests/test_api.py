@@ -44,6 +44,11 @@ def _mock_github(counter: dict) -> GitHubClient:
                 json={
                     "login": "octocat",
                     "name": "Octo",
+                    "bio": "GitHub mascot",
+                    "location": "San Francisco",
+                    "company": "GitHub",
+                    "blog": "https://github.com/octocat",
+                    "created_at": "2011-01-25T18:44:36Z",
                     "public_repos": 3,
                     "followers": 1,
                     "following": 2,
@@ -51,6 +56,14 @@ def _mock_github(counter: dict) -> GitHubClient:
             )
         if path == "/users/octocat/events/public":
             return httpx.Response(200, json=[{"type": "PushEvent"}])
+        if path == "/users/octocat/repos":
+            return httpx.Response(200, json=[
+                {"language": "Python", "fork": False},
+                {"language": "Python", "fork": False},
+                {"language": "Go", "fork": False},
+                {"language": None, "fork": False},
+                {"language": "Python", "fork": True},
+            ])
         if path == "/repos/torvalds/linux":
             return httpx.Response(
                 200,
@@ -185,8 +198,15 @@ def test_analyze_user_url(client):
     assert r.status_code == 200
     body = r.json()
     assert body["type"] == "user"
-    assert body["data"]["username"] == "octocat"
-    assert body["data"]["cached"] is False
+    d = body["data"]
+    assert d["username"] == "octocat"
+    assert d["bio"] == "GitHub mascot"
+    assert d["location"] == "San Francisco"
+    assert d["created_at"] == "2011-01-25T18:44:36Z"
+    assert d["repo_languages"]["Python"] == 2
+    assert d["repo_languages"]["Go"] == 1
+    assert "Python" in d["repo_languages"]
+    assert d["cached"] is False
 
 
 def test_analyze_repo_url(client):

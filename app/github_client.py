@@ -54,14 +54,31 @@ class GitHubClient:
         events = self._get(f"/users/{username}/events/public").json()
 
         counts = Counter(e.get("type") or "Unknown" for e in events)
+
+        try:
+            repos = self._get(f"/users/{username}/repos?per_page=100&type=owner").json()
+            lang_counts: Counter = Counter()
+            for r in repos:
+                if isinstance(r, dict) and r.get("language") and not r.get("fork"):
+                    lang_counts[r["language"]] += 1
+            repo_languages = dict(lang_counts.most_common(8))
+        except GitHubError:
+            repo_languages = {}
+
         return {
             "username": user["login"],
             "name": user.get("name"),
+            "bio": user.get("bio"),
+            "location": user.get("location"),
+            "company": user.get("company"),
+            "blog": user.get("blog") or None,
+            "created_at": user.get("created_at"),
             "public_repos": user.get("public_repos", 0),
             "followers": user.get("followers", 0),
             "following": user.get("following", 0),
             "event_counts": dict(counts),
             "total_events": len(events),
+            "repo_languages": repo_languages,
         }
 
     def get_repo(self, username: str, repo: str) -> dict:
