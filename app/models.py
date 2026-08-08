@@ -22,10 +22,15 @@ class UserActivity(BaseModel):
     public_repos: int
     followers: int
     following: int
-    # event type -> count over the recent public events window
     event_counts: dict[str, int]
     total_events: int
     cached: bool = False
+
+
+class Contributor(BaseModel):
+    username: str
+    contributions: int
+    avatar_url: str
 
 
 class RepoInfo(BaseModel):
@@ -39,13 +44,46 @@ class RepoInfo(BaseModel):
     language: str | None = None
     topics: list[str] = []
     updated_at: str
+    contributors: list[Contributor] = []
+    languages: dict[str, int] = {}
+    cached: bool = False
+
+
+class PRInfo(BaseModel):
+    number: int
+    title: str
+    state: str  # open | closed | merged
+    author: str
+    base: str
+    head: str
+    additions: int
+    deletions: int
+    changed_files: int
+    comments: int
+    review_comments: int
+    reviewers: list[str] = []
+    created_at: str
+    merged_at: str | None = None
+    cached: bool = False
+
+
+class IssueInfo(BaseModel):
+    number: int
+    title: str
+    state: str  # open | closed
+    author: str
+    labels: list[str] = []
+    assignees: list[str] = []
+    comments: int
+    created_at: str
+    closed_at: str | None = None
     cached: bool = False
 
 
 class AnalyzeResult(BaseModel):
-    type: str  # "user" | "repo"
+    type: str  # "user" | "repo" | "pr" | "issue"
     url: str
-    data: Any  # UserActivity or RepoInfo
+    data: Any
 
 
 class Health(BaseModel):

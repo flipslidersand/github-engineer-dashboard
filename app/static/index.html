@@ -28,9 +28,14 @@
     border-radius: 6px; cursor: pointer; font-size: 0.9rem; white-space: nowrap;
   }
   button:hover { background: #2ea043; }
-  .activity-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 10px; margin-top: 16px;
+  /* stats row */
+  .stats { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
+  .stat-item .value { font-size: 1.1rem; font-weight: 600; color: #f0f6fc; }
+  .stat-item .label { font-size: 0.75rem; color: #8b949e; }
+  /* event cards */
+  .ev-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px; margin-top: 14px;
   }
   .ev-card {
     background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
@@ -38,20 +43,41 @@
   }
   .ev-card .ev-count { font-size: 1.4rem; font-weight: 700; color: #58a6ff; }
   .ev-card .ev-type { font-size: 0.78rem; color: #8b949e; margin-top: 2px; }
-  .profile-stats { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
-  .profile-stat .value { font-size: 1.1rem; font-weight: 600; color: #f0f6fc; }
-  .profile-stat .label { font-size: 0.75rem; color: #8b949e; }
-  .repo-header { margin-bottom: 16px; }
-  .repo-name { font-size: 1.2rem; font-weight: 700; color: #58a6ff; }
-  .repo-desc { font-size: 0.875rem; color: #8b949e; margin-top: 4px; }
-  .repo-stats { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 12px; }
-  .repo-stat .value { font-size: 1.1rem; font-weight: 600; color: #f0f6fc; }
-  .repo-stat .label { font-size: 0.75rem; color: #8b949e; }
+  /* contributor row */
+  .contrib-list { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .contrib-item { display: flex; align-items: center; gap: 8px; }
+  .contrib-item img { width: 24px; height: 24px; border-radius: 50%; }
+  .contrib-item .c-name { font-size: 0.85rem; color: #c9d1d9; }
+  .contrib-item .c-count { font-size: 0.75rem; color: #8b949e; }
+  /* language bar */
+  .lang-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 14px; }
+  .lang-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .lang-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+  .lang-item { font-size: 0.78rem; color: #8b949e; display: flex; align-items: center; }
+  /* topics */
   .topics { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .topic {
     font-size: 0.75rem; padding: 2px 10px; border-radius: 10px;
     background: #1f3d5c; color: #58a6ff; border: 1px solid #1f6feb44;
   }
+  /* PR/Issue state badge */
+  .state-badge {
+    display: inline-block; font-size: 0.75rem; font-weight: 600;
+    padding: 2px 10px; border-radius: 12px; margin-left: 8px; vertical-align: middle;
+  }
+  .state-open { background: #1a4f2a; color: #3fb950; }
+  .state-closed { background: #3d1f00; color: #f85149; }
+  .state-merged { background: #2d1f5e; color: #a371f7; }
+  /* diff stats */
+  .diff-add { color: #3fb950; font-weight: 600; }
+  .diff-del { color: #f85149; font-weight: 600; }
+  /* labels */
+  .labels { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .label-tag {
+    font-size: 0.72rem; padding: 2px 8px; border-radius: 10px;
+    background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
+  }
+  /* shared */
   .badge {
     display: inline-block; font-size: 0.7rem; padding: 1px 7px;
     border-radius: 10px; background: #1f6feb; color: #cae8ff; margin-left: 8px;
@@ -64,6 +90,8 @@
     border: 1px solid #30363d; margin-left: 8px; vertical-align: middle;
   }
   .hint { font-size: 0.78rem; color: #8b949e; margin-top: 6px; }
+  .meta { font-size: 0.78rem; color: #8b949e; margin-top: 10px; }
+  .section-title { font-size: 0.8rem; font-weight: 600; color: #8b949e; margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
   .err { color: #f85149; font-size: 0.85rem; margin-top: 12px; }
   .spinner {
     display: inline-block; width: 14px; height: 14px;
@@ -79,91 +107,137 @@
 
 <div class="card">
   <div class="row">
-    <input type="text" id="urlInput" placeholder="https://github.com/torvalds  or  https://github.com/torvalds/linux" autofocus>
+    <input type="text" id="urlInput"
+      placeholder="https://github.com/torvalds  ·  /torvalds/linux  ·  /torvalds/linux/pull/1  ·  /issues/1"
+      autofocus>
     <button onclick="fetchAnalyze()">Analyze</button>
   </div>
-  <div class="hint">User profile URL → activity summary · Repository URL → stars, forks, language…</div>
+  <div class="hint">User · Repository · Pull Request · Issue に対応</div>
   <div id="analyzeContent" style="margin-top:14px;"></div>
 </div>
 
 <script>
 const API = '';
+const LANG_COLORS = {
+  JavaScript:'#f1e05a',TypeScript:'#3178c6',Python:'#3572A5',Go:'#00ADD8',
+  Rust:'#dea584',C:'#555555','C++':'#f34b7d','C#':'#178600',Java:'#b07219',
+  Ruby:'#701516',PHP:'#4F5D95',Swift:'#F05138',Kotlin:'#A97BFF',Shell:'#89e051',
+  HTML:'#e34c26',CSS:'#563d7c',Vue:'#41b883',Dart:'#00B4AB',Scala:'#c22d40',
+};
+function langColor(name) { return LANG_COLORS[name] || '#8b949e'; }
 
 async function fetchAnalyze() {
   const url = document.getElementById('urlInput').value.trim();
-  if (!url) {
-    document.getElementById('analyzeContent').innerHTML =
-      '<span class="err">GitHub URL を入力してください</span>';
-    return;
-  }
-  document.getElementById('analyzeContent').innerHTML = '<span class="spinner"></span> Analyzing…';
+  if (!url) { show('<span class="err">GitHub URL を入力してください</span>'); return; }
+  show('<span class="spinner"></span> Analyzing…');
   try {
     const res = await fetch(`${API}/api/analyze?url=${encodeURIComponent(url)}`);
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail || e.error || res.statusText); }
     const result = await res.json();
-    if (result.type === 'user') renderUser(result.data);
-    else if (result.type === 'repo') renderRepo(result.data);
-    else document.getElementById('analyzeContent').innerHTML =
-      '<span class="err">未対応のURLタイプです</span>';
-  } catch (e) {
-    document.getElementById('analyzeContent').innerHTML =
-      `<span class="err">Error: ${e.message}</span>`;
-  }
+    const fn = { user: renderUser, repo: renderRepo, pr: renderPR, issue: renderIssue }[result.type];
+    fn ? fn(result.data) : show('<span class="err">未対応のURLタイプです</span>');
+  } catch (e) { show(`<span class="err">Error: ${e.message}</span>`); }
+}
+
+function show(html) { document.getElementById('analyzeContent').innerHTML = html; }
+
+function badges(d, type) {
+  const cache = d.cached ? '<span class="badge cached">cached</span>' : '<span class="badge">live</span>';
+  return `<span class="type-badge">${type}</span>${cache}`;
 }
 
 function renderUser(d) {
-  const cachedBadge = d.cached
-    ? '<span class="badge cached">cached</span>'
-    : '<span class="badge">live</span>';
-  const displayName = d.name ? `${d.name} (${d.username})` : d.username;
-  const events = Object.entries(d.event_counts).sort((a, b) => b[1] - a[1]);
+  const events = Object.entries(d.event_counts).sort((a,b)=>b[1]-a[1]);
   const evCards = events.length
-    ? events.map(([t, c]) =>
-        `<div class="ev-card"><div class="ev-count">${c}</div><div class="ev-type">${t.replace('Event', '')}</div></div>`
-      ).join('')
+    ? events.map(([t,c])=>`<div class="ev-card"><div class="ev-count">${c}</div><div class="ev-type">${t.replace('Event','')}</div></div>`).join('')
     : '<span style="color:#8b949e;">No recent public events.</span>';
-  document.getElementById('analyzeContent').innerHTML = `
+  show(`
     <div>
-      <strong style="font-size:1.05rem;">${displayName}</strong>
-      <span class="type-badge">user</span>${cachedBadge}
-      <div class="profile-stats">
-        <div class="profile-stat"><div class="value">${d.public_repos}</div><div class="label">Repos</div></div>
-        <div class="profile-stat"><div class="value">${d.followers}</div><div class="label">Followers</div></div>
-        <div class="profile-stat"><div class="value">${d.following}</div><div class="label">Following</div></div>
-        <div class="profile-stat"><div class="value">${d.total_events}</div><div class="label">Events</div></div>
+      <strong style="font-size:1.1rem;">${d.name ? `${d.name} (${d.username})` : d.username}</strong>
+      ${badges(d,'user')}
+      <div class="stats">
+        <div class="stat-item"><div class="value">${d.public_repos}</div><div class="label">Repos</div></div>
+        <div class="stat-item"><div class="value">${d.followers}</div><div class="label">Followers</div></div>
+        <div class="stat-item"><div class="value">${d.following}</div><div class="label">Following</div></div>
+        <div class="stat-item"><div class="value">${d.total_events}</div><div class="label">Events</div></div>
       </div>
     </div>
-    <div class="activity-grid">${evCards}</div>`;
+    <div class="section-title">Recent Activity</div>
+    <div class="ev-grid">${evCards}</div>`);
 }
 
 function renderRepo(d) {
-  const cachedBadge = d.cached
-    ? '<span class="badge cached">cached</span>'
-    : '<span class="badge">live</span>';
-  const desc = d.description ? `<div class="repo-desc">${d.description}</div>` : '';
-  const lang = d.language
-    ? `<div class="repo-stat"><div class="value">${d.language}</div><div class="label">Language</div></div>`
-    : '';
-  const topicHtml = (d.topics || []).length
-    ? `<div class="topics">${d.topics.map(t => `<span class="topic">${t}</span>`).join('')}</div>`
-    : '';
-  const updated = d.updated_at
-    ? `<div style="font-size:0.78rem;color:#8b949e;margin-top:10px;">Updated: ${d.updated_at.slice(0, 10)}</div>`
-    : '';
-  document.getElementById('analyzeContent').innerHTML = `
-    <div class="repo-header">
-      <span class="repo-name">${d.full_name}</span>
-      <span class="type-badge">repo</span>${cachedBadge}
-      ${desc}
+  const total = Object.values(d.languages).reduce((a,b)=>a+b,0) || 1;
+  const langBar = Object.entries(d.languages).map(([l,n])=>
+    `<div style="width:${(n/total*100).toFixed(1)}%;background:${langColor(l)};"></div>`).join('');
+  const langLegend = Object.entries(d.languages).slice(0,8).map(([l,n])=>
+    `<span class="lang-item"><span class="lang-dot" style="background:${langColor(l)};"></span>${l} ${(n/total*100).toFixed(1)}%</span>`).join('');
+  const contribs = (d.contributors||[]).map(c=>
+    `<div class="contrib-item"><img src="${c.avatar_url}" alt="${c.username}"><div><div class="c-name">${c.username}</div><div class="c-count">${c.contributions} commits</div></div></div>`).join('');
+  const topicHtml = (d.topics||[]).length
+    ? `<div class="topics">${d.topics.map(t=>`<span class="topic">${t}</span>`).join('')}</div>` : '';
+
+  show(`
+    <div>
+      <span style="font-size:1.2rem;font-weight:700;color:#58a6ff;">${d.full_name}</span>
+      ${badges(d,'repo')}
+      ${d.description ? `<div style="font-size:0.875rem;color:#8b949e;margin-top:4px;">${d.description}</div>` : ''}
     </div>
-    <div class="repo-stats">
-      <div class="repo-stat"><div class="value">⭐ ${d.stars.toLocaleString()}</div><div class="label">Stars</div></div>
-      <div class="repo-stat"><div class="value">🍴 ${d.forks.toLocaleString()}</div><div class="label">Forks</div></div>
-      <div class="repo-stat"><div class="value">${d.open_issues}</div><div class="label">Open Issues</div></div>
-      ${lang}
+    <div class="stats" style="margin-top:12px;">
+      <div class="stat-item"><div class="value">⭐ ${d.stars.toLocaleString()}</div><div class="label">Stars</div></div>
+      <div class="stat-item"><div class="value">🍴 ${d.forks.toLocaleString()}</div><div class="label">Forks</div></div>
+      <div class="stat-item"><div class="value">${d.open_issues}</div><div class="label">Open Issues</div></div>
+      ${d.language ? `<div class="stat-item"><div class="value">${d.language}</div><div class="label">Language</div></div>` : ''}
     </div>
     ${topicHtml}
-    ${updated}`;
+    ${Object.keys(d.languages).length ? `
+      <div class="section-title">Languages</div>
+      <div class="lang-bar">${langBar}</div>
+      <div class="lang-legend">${langLegend}</div>` : ''}
+    ${contribs ? `<div class="section-title">Top Contributors</div><div class="contrib-list">${contribs}</div>` : ''}
+    <div class="meta">Updated: ${d.updated_at.slice(0,10)}</div>`);
+}
+
+function renderPR(d) {
+  const stateClass = { open:'state-open', closed:'state-closed', merged:'state-merged' }[d.state] || 'state-open';
+  const reviewers = d.reviewers.length
+    ? `<div class="meta">Reviewers: ${d.reviewers.join(', ')}</div>` : '';
+  show(`
+    <div>
+      <span style="font-size:1.05rem;font-weight:700;">#${d.number} ${d.title}</span>
+      <span class="state-badge ${stateClass}">${d.state}</span>
+      ${badges(d,'pr')}
+    </div>
+    <div class="stats" style="margin-top:12px;">
+      <div class="stat-item"><div class="value">${d.changed_files}</div><div class="label">Files</div></div>
+      <div class="stat-item"><div class="value"><span class="diff-add">+${d.additions}</span></div><div class="label">Additions</div></div>
+      <div class="stat-item"><div class="value"><span class="diff-del">-${d.deletions}</span></div><div class="label">Deletions</div></div>
+      <div class="stat-item"><div class="value">${d.comments + d.review_comments}</div><div class="label">Comments</div></div>
+    </div>
+    <div class="meta">Author: <strong>${d.author}</strong> · ${d.base} ← ${d.head}</div>
+    ${reviewers}
+    <div class="meta">Opened: ${d.created_at.slice(0,10)}${d.merged_at ? ' · Merged: ' + d.merged_at.slice(0,10) : ''}</div>`);
+}
+
+function renderIssue(d) {
+  const stateClass = d.state === 'open' ? 'state-open' : 'state-closed';
+  const labelHtml = d.labels.length
+    ? `<div class="labels">${d.labels.map(l=>`<span class="label-tag">${l}</span>`).join('')}</div>` : '';
+  const assignees = d.assignees.length
+    ? `<div class="meta">Assignees: ${d.assignees.join(', ')}</div>` : '';
+  show(`
+    <div>
+      <span style="font-size:1.05rem;font-weight:700;">#${d.number} ${d.title}</span>
+      <span class="state-badge ${stateClass}">${d.state}</span>
+      ${badges(d,'issue')}
+    </div>
+    ${labelHtml}
+    <div class="stats" style="margin-top:12px;">
+      <div class="stat-item"><div class="value">${d.comments}</div><div class="label">Comments</div></div>
+    </div>
+    <div class="meta">Author: <strong>${d.author}</strong></div>
+    ${assignees}
+    <div class="meta">Opened: ${d.created_at.slice(0,10)}${d.closed_at ? ' · Closed: ' + d.closed_at.slice(0,10) : ''}</div>`);
 }
 
 document.getElementById('urlInput').addEventListener('keydown', e => {
