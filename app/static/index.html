@@ -11,7 +11,6 @@
     background: #0d1117; color: #c9d1d9; min-height: 100vh; padding: 24px;
   }
   h1 { font-size: 1.4rem; font-weight: 600; color: #f0f6fc; margin-bottom: 24px; }
-  h2 { font-size: 1rem; font-weight: 600; color: #f0f6fc; margin-bottom: 12px; }
   .card {
     background: #161b22; border: 1px solid #30363d; border-radius: 8px;
     padding: 20px; margin-bottom: 16px;
@@ -22,33 +21,16 @@
     font-size: 0.9rem; outline: none;
   }
   input:focus { border-color: #388bfd; }
-  .row { display: flex; gap: 12px; align-items: flex-end; }
+  .row { display: flex; gap: 12px; align-items: center; }
   .row input { flex: 1; }
   button {
     padding: 8px 18px; background: #238636; color: #fff; border: none;
     border-radius: 6px; cursor: pointer; font-size: 0.9rem; white-space: nowrap;
   }
   button:hover { background: #2ea043; }
-  button.secondary {
-    background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
-  }
-  button.secondary:hover { background: #30363d; }
-  .rate-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 12px; margin-top: 4px;
-  }
-  .stat { text-align: center; }
-  .stat .value { font-size: 1.8rem; font-weight: 700; color: #f0f6fc; }
-  .stat .value.warn { color: #d29922; }
-  .stat .value.ok { color: #3fb950; }
-  .stat .label { font-size: 0.75rem; color: #8b949e; margin-top: 2px; }
-  .bar-wrap { background: #0d1117; border-radius: 4px; height: 6px; margin-top: 12px; }
-  .bar { height: 6px; border-radius: 4px; background: #3fb950; transition: width 0.4s; }
-  .bar.warn { background: #d29922; }
-  .bar.danger { background: #f85149; }
   .activity-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 10px; margin-top: 8px;
+    gap: 10px; margin-top: 16px;
   }
   .ev-card {
     background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
@@ -56,13 +38,12 @@
   }
   .ev-card .ev-count { font-size: 1.4rem; font-weight: 700; color: #58a6ff; }
   .ev-card .ev-type { font-size: 0.78rem; color: #8b949e; margin-top: 2px; }
-  .profile { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; }
-  .profile-stats { display: flex; gap: 24px; flex-wrap: wrap; }
+  .profile-stats { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
   .profile-stat .value { font-size: 1.1rem; font-weight: 600; color: #f0f6fc; }
   .profile-stat .label { font-size: 0.75rem; color: #8b949e; }
   .repo-header { margin-bottom: 16px; }
-  .repo-header .repo-name { font-size: 1.2rem; font-weight: 700; color: #58a6ff; }
-  .repo-header .repo-desc { font-size: 0.875rem; color: #8b949e; margin-top: 4px; }
+  .repo-name { font-size: 1.2rem; font-weight: 700; color: #58a6ff; }
+  .repo-desc { font-size: 0.875rem; color: #8b949e; margin-top: 4px; }
   .repo-stats { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 12px; }
   .repo-stat .value { font-size: 1.1rem; font-weight: 600; color: #f0f6fc; }
   .repo-stat .label { font-size: 0.75rem; color: #8b949e; }
@@ -82,7 +63,8 @@
     border-radius: 10px; background: #21262d; color: #8b949e;
     border: 1px solid #30363d; margin-left: 8px; vertical-align: middle;
   }
-  .err { color: #f85149; font-size: 0.85rem; margin-top: 8px; }
+  .hint { font-size: 0.78rem; color: #8b949e; margin-top: 6px; }
+  .err { color: #f85149; font-size: 0.85rem; margin-top: 12px; }
   .spinner {
     display: inline-block; width: 14px; height: 14px;
     border: 2px solid #30363d; border-top-color: #58a6ff;
@@ -90,17 +72,13 @@
     vertical-align: middle; margin-right: 6px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #resetCountdown { font-size: 0.8rem; color: #8b949e; margin-top: 8px; }
-  .hint { font-size: 0.78rem; color: #8b949e; margin-top: 6px; }
 </style>
 </head>
 <body>
 <h1>⚙️ GitHub Engineer Dashboard</h1>
 
-<!-- URL Analyzer -->
 <div class="card">
-  <h2>Analyze GitHub URL</h2>
-  <div class="row" style="margin-bottom:6px;">
+  <div class="row">
     <input type="text" id="urlInput" placeholder="https://github.com/torvalds  or  https://github.com/torvalds/linux" autofocus>
     <button onclick="fetchAnalyze()">Analyze</button>
   </div>
@@ -108,56 +86,9 @@
   <div id="analyzeContent" style="margin-top:14px;"></div>
 </div>
 
-<!-- Rate Limit Widget -->
-<div class="card">
-  <h2>API Rate Limit <button class="secondary" style="font-size:0.75rem;padding:4px 10px;margin-left:8px;" onclick="fetchRateLimit()">Refresh</button></h2>
-  <div id="rateContent"><span style="color:#8b949e;">Loading…</span></div>
-  <div id="resetCountdown"></div>
-</div>
-
 <script>
-const API = '';  // same origin
+const API = '';
 
-// ── Rate Limit ────────────────────────────────────────────────────────────────
-let resetInterval = null;
-async function fetchRateLimit() {
-  try {
-    const res = await fetch(`${API}/api/rate-limit`);
-    if (!res.ok) { const e = await res.json(); throw new Error(e.error || res.statusText); }
-    renderRateLimit(await res.json());
-  } catch (e) {
-    document.getElementById('rateContent').innerHTML = `<span class="err">Error: ${e.message}</span>`;
-  }
-}
-
-function renderRateLimit(d) {
-  const pct = d.limit > 0 ? d.remaining / d.limit : 0;
-  const barClass = pct > 0.3 ? '' : pct > 0.1 ? 'warn' : 'danger';
-  const valClass = pct > 0.3 ? 'ok' : pct > 0.1 ? 'warn' : '';
-  const barW = Math.round(pct * 100);
-  document.getElementById('rateContent').innerHTML = `
-    <div class="rate-grid">
-      <div class="stat"><div class="value ${valClass}">${d.remaining.toLocaleString()}</div><div class="label">Remaining</div></div>
-      <div class="stat"><div class="value">${d.limit.toLocaleString()}</div><div class="label">Limit</div></div>
-      <div class="stat"><div class="value">${d.used.toLocaleString()}</div><div class="label">Used</div></div>
-    </div>
-    <div class="bar-wrap"><div class="bar ${barClass}" style="width:${barW}%"></div></div>`;
-  startCountdown(d.reset);
-}
-
-function startCountdown(resetEpoch) {
-  if (resetInterval) clearInterval(resetInterval);
-  function tick() {
-    const secs = Math.max(0, resetEpoch - Math.floor(Date.now() / 1000));
-    const m = Math.floor(secs / 60), s = secs % 60;
-    document.getElementById('resetCountdown').textContent =
-      secs > 0 ? `Resets in ${m}m ${s}s` : 'Resetting…';
-  }
-  tick();
-  resetInterval = setInterval(tick, 1000);
-}
-
-// ── URL Analyzer ──────────────────────────────────────────────────────────────
 async function fetchAnalyze() {
   const url = document.getElementById('urlInput').value.trim();
   if (!url) {
@@ -184,7 +115,6 @@ function renderUser(d) {
   const cachedBadge = d.cached
     ? '<span class="badge cached">cached</span>'
     : '<span class="badge">live</span>';
-  const typeBadge = '<span class="type-badge">user</span>';
   const displayName = d.name ? `${d.name} (${d.username})` : d.username;
   const events = Object.entries(d.event_counts).sort((a, b) => b[1] - a[1]);
   const evCards = events.length
@@ -193,15 +123,14 @@ function renderUser(d) {
       ).join('')
     : '<span style="color:#8b949e;">No recent public events.</span>';
   document.getElementById('analyzeContent').innerHTML = `
-    <div class="profile">
-      <div>
-        <strong style="font-size:1.05rem;">${displayName}</strong>${typeBadge}${cachedBadge}
-        <div class="profile-stats" style="margin-top:8px;">
-          <div class="profile-stat"><div class="value">${d.public_repos}</div><div class="label">Repos</div></div>
-          <div class="profile-stat"><div class="value">${d.followers}</div><div class="label">Followers</div></div>
-          <div class="profile-stat"><div class="value">${d.following}</div><div class="label">Following</div></div>
-          <div class="profile-stat"><div class="value">${d.total_events}</div><div class="label">Events</div></div>
-        </div>
+    <div>
+      <strong style="font-size:1.05rem;">${displayName}</strong>
+      <span class="type-badge">user</span>${cachedBadge}
+      <div class="profile-stats">
+        <div class="profile-stat"><div class="value">${d.public_repos}</div><div class="label">Repos</div></div>
+        <div class="profile-stat"><div class="value">${d.followers}</div><div class="label">Followers</div></div>
+        <div class="profile-stat"><div class="value">${d.following}</div><div class="label">Following</div></div>
+        <div class="profile-stat"><div class="value">${d.total_events}</div><div class="label">Events</div></div>
       </div>
     </div>
     <div class="activity-grid">${evCards}</div>`;
@@ -211,10 +140,7 @@ function renderRepo(d) {
   const cachedBadge = d.cached
     ? '<span class="badge cached">cached</span>'
     : '<span class="badge">live</span>';
-  const typeBadge = '<span class="type-badge">repo</span>';
-  const desc = d.description
-    ? `<div class="repo-desc">${d.description}</div>`
-    : '';
+  const desc = d.description ? `<div class="repo-desc">${d.description}</div>` : '';
   const lang = d.language
     ? `<div class="repo-stat"><div class="value">${d.language}</div><div class="label">Language</div></div>`
     : '';
@@ -226,7 +152,8 @@ function renderRepo(d) {
     : '';
   document.getElementById('analyzeContent').innerHTML = `
     <div class="repo-header">
-      <span class="repo-name">${d.full_name}</span>${typeBadge}${cachedBadge}
+      <span class="repo-name">${d.full_name}</span>
+      <span class="type-badge">repo</span>${cachedBadge}
       ${desc}
     </div>
     <div class="repo-stats">
@@ -238,9 +165,6 @@ function renderRepo(d) {
     ${topicHtml}
     ${updated}`;
 }
-
-// ── Init ──────────────────────────────────────────────────────────────────────
-fetchRateLimit();
 
 document.getElementById('urlInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') fetchAnalyze();
