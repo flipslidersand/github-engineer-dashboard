@@ -16,8 +16,7 @@
     background: #161b22; border: 1px solid #30363d; border-radius: 8px;
     padding: 20px; margin-bottom: 16px;
   }
-  label { display: block; font-size: 0.85rem; color: #8b949e; margin-bottom: 6px; }
-  input[type="text"], input[type="password"] {
+  input[type="text"] {
     width: 100%; padding: 8px 12px; background: #0d1117;
     border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9;
     font-size: 0.9rem; outline: none;
@@ -81,71 +80,33 @@
 <body>
 <h1>⚙️ GitHub Engineer Dashboard</h1>
 
-<!-- Token Card -->
-<div class="card">
-  <h2>GitHub Token</h2>
-  <label for="tokenInput">Personal Access Token (stored in localStorage)</label>
-  <div class="row">
-    <input type="password" id="tokenInput" placeholder="ghp_…" autocomplete="off">
-    <button onclick="saveToken()">Save</button>
-    <button class="secondary" onclick="clearToken()">Clear</button>
-  </div>
-  <div id="tokenStatus" style="font-size:0.8rem; color:#8b949e; margin-top:8px;"></div>
-</div>
-
-<!-- Rate Limit Widget -->
-<div class="card">
-  <h2>Rate Limit <button class="secondary" style="font-size:0.75rem;padding:4px 10px;margin-left:8px;" onclick="fetchRateLimit()">Refresh</button></h2>
-  <div id="rateContent"><span style="color:#8b949e;">— enter token and refresh —</span></div>
-  <div id="resetCountdown"></div>
-</div>
-
 <!-- User Activity -->
 <div class="card">
   <h2>User Activity</h2>
   <div class="row" style="margin-bottom:12px;">
-    <input type="text" id="usernameInput" placeholder="GitHub username" value="">
+    <input type="text" id="usernameInput" placeholder="GitHub username" autofocus>
     <button onclick="fetchActivity()">Look up</button>
   </div>
   <div id="activityContent"></div>
 </div>
 
+<!-- Rate Limit Widget -->
+<div class="card">
+  <h2>API Rate Limit <button class="secondary" style="font-size:0.75rem;padding:4px 10px;margin-left:8px;" onclick="fetchRateLimit()">Refresh</button></h2>
+  <div id="rateContent"><span style="color:#8b949e;">Loading…</span></div>
+  <div id="resetCountdown"></div>
+</div>
+
 <script>
 const API = '';  // same origin
-
-// ── Token ────────────────────────────────────────────────────────────────────
-function saveToken() {
-  const v = document.getElementById('tokenInput').value.trim();
-  if (!v) return;
-  localStorage.setItem('gh_token', v);
-  document.getElementById('tokenInput').value = '•'.repeat(20);
-  setStatus('Saved ✓');
-  fetchRateLimit();
-}
-function clearToken() {
-  localStorage.removeItem('gh_token');
-  document.getElementById('tokenInput').value = '';
-  setStatus('Cleared');
-  document.getElementById('rateContent').innerHTML = '<span style="color:#8b949e;">— enter token and refresh —</span>';
-  document.getElementById('resetCountdown').textContent = '';
-}
-function setStatus(msg) {
-  document.getElementById('tokenStatus').textContent = msg;
-  setTimeout(() => { document.getElementById('tokenStatus').textContent = ''; }, 3000);
-}
-function getToken() { return localStorage.getItem('gh_token') || ''; }
 
 // ── Rate Limit ────────────────────────────────────────────────────────────────
 let resetInterval = null;
 async function fetchRateLimit() {
-  const token = getToken();
-  if (!token) { document.getElementById('rateContent').innerHTML = '<span class="err">No token saved.</span>'; return; }
-  document.getElementById('rateContent').innerHTML = '<span class="spinner"></span> Loading…';
   try {
-    const res = await fetch(`${API}/api/rate-limit`, { headers: { 'X-GitHub-Token': token } });
+    const res = await fetch(`${API}/api/rate-limit`);
     if (!res.ok) { const e = await res.json(); throw new Error(e.error || res.statusText); }
-    const d = await res.json();
-    renderRateLimit(d);
+    renderRateLimit(await res.json());
   } catch (e) {
     document.getElementById('rateContent').innerHTML = `<span class="err">Error: ${e.message}</span>`;
   }
@@ -162,7 +123,7 @@ function renderRateLimit(d) {
       <div class="stat"><div class="value">${d.limit.toLocaleString()}</div><div class="label">Limit</div></div>
       <div class="stat"><div class="value">${d.used.toLocaleString()}</div><div class="label">Used</div></div>
     </div>
-    <div class="bar-wrap"><div class="bar ${barClass}" id="ratebar" style="width:${barW}%"></div></div>`;
+    <div class="bar-wrap"><div class="bar ${barClass}" style="width:${barW}%"></div></div>`;
   startCountdown(d.reset);
 }
 
@@ -180,17 +141,13 @@ function startCountdown(resetEpoch) {
 
 // ── User Activity ─────────────────────────────────────────────────────────────
 async function fetchActivity() {
-  const token = getToken();
   const username = document.getElementById('usernameInput').value.trim();
-  if (!token) { document.getElementById('activityContent').innerHTML = '<span class="err">No token saved.</span>'; return; }
   if (!username) { document.getElementById('activityContent').innerHTML = '<span class="err">Enter a username.</span>'; return; }
   document.getElementById('activityContent').innerHTML = '<span class="spinner"></span> Loading…';
   try {
-    const res = await fetch(`${API}/api/users/${encodeURIComponent(username)}/activity`,
-      { headers: { 'X-GitHub-Token': token } });
+    const res = await fetch(`${API}/api/users/${encodeURIComponent(username)}/activity`);
     if (!res.ok) { const e = await res.json(); throw new Error(e.error || res.statusText); }
-    const d = await res.json();
-    renderActivity(d);
+    renderActivity(await res.json());
   } catch (e) {
     document.getElementById('activityContent').innerHTML = `<span class="err">Error: ${e.message}</span>`;
   }
@@ -219,13 +176,11 @@ function renderActivity(d) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-(function init() {
-  if (getToken()) {
-    document.getElementById('tokenInput').value = '•'.repeat(20);
-    setStatus('Token loaded from storage');
-    fetchRateLimit();
-  }
-})();
+fetchRateLimit();
+
+document.getElementById('usernameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') fetchActivity();
+});
 </script>
 </body>
 </html>
