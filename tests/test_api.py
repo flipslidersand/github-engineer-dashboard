@@ -65,6 +65,49 @@ def _mock_github(counter: dict) -> GitHubClient:
                     "updated_at": "2026-08-01T00:00:00Z",
                 },
             )
+        if path == "/repos/torvalds/linux/contributors":
+            return httpx.Response(
+                200,
+                json=[{"login": "torvalds", "contributions": 100, "avatar_url": "https://example.com/a.png"}],
+            )
+        if path == "/repos/torvalds/linux/languages":
+            return httpx.Response(200, json={"C": 900000, "Makefile": 50000})
+        if path == "/repos/torvalds/linux/pulls/1":
+            return httpx.Response(
+                200,
+                json={
+                    "number": 1,
+                    "title": "Fix bug",
+                    "state": "open",
+                    "user": {"login": "octocat"},
+                    "base": {"ref": "main"},
+                    "head": {"ref": "fix/bug"},
+                    "additions": 10,
+                    "deletions": 3,
+                    "changed_files": 2,
+                    "comments": 1,
+                    "review_comments": 0,
+                    "created_at": "2026-08-01T00:00:00Z",
+                    "merged_at": None,
+                },
+            )
+        if path == "/repos/torvalds/linux/pulls/1/reviews":
+            return httpx.Response(200, json=[])
+        if path == "/repos/torvalds/linux/issues/5":
+            return httpx.Response(
+                200,
+                json={
+                    "number": 5,
+                    "title": "Memory leak",
+                    "state": "open",
+                    "user": {"login": "octocat"},
+                    "labels": [{"name": "bug"}],
+                    "assignees": [],
+                    "comments": 3,
+                    "created_at": "2026-08-01T00:00:00Z",
+                    "closed_at": None,
+                },
+            )
         return httpx.Response(404, json={"message": "not found"})
 
     http = httpx.Client(transport=httpx.MockTransport(handler))
@@ -151,6 +194,8 @@ def test_analyze_repo_url(client):
     assert body["data"]["full_name"] == "torvalds/linux"
     assert body["data"]["stars"] == 185000
     assert body["data"]["language"] == "C"
+    assert body["data"]["contributors"][0]["username"] == "torvalds"
+    assert "C" in body["data"]["languages"]
     assert body["data"]["cached"] is False
 
 
@@ -172,3 +217,28 @@ def test_analyze_unknown_url_returns_422(client):
 def test_analyze_requires_token(client):
     r = client.get("/api/analyze?url=https://github.com/octocat")
     assert r.status_code == 401
+
+
+def test_analyze_pr_url(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/analyze?url=https://github.com/torvalds/linux/pull/1", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["type"] == "pr"
+    assert body["data"]["number"] == 1
+    assert body["data"]["title"] == "Fix bug"
+    assert body["data"]["state"] == "open"
+    assert body["data"]["changed_files"] == 2
+    assert body["data"]["cached"] is False
+
+
+def test_analyze_issue_url(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/analyze?url=https://github.com/torvalds/linux/issues/5", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["type"] == "issue"
+    assert body["data"]["number"] == 5
+    assert body["data"]["title"] == "Memory leak"
+    assert body["data"]["labels"] == ["bug"]
+    assert body["data"]["cached"] is False

@@ -26,7 +26,7 @@ from . import __version__
 from .cache import SQLiteCache
 from .config import Settings
 from .github_client import GitHubClient, GitHubError
-from .models import AnalyzeResult, Health, RateLimit, RepoInfo, UserActivity
+from .models import AnalyzeResult, Health, IssueInfo, PRInfo, RateLimit, RepoInfo, UserActivity
 from .url_parser import UrlType, parse_github_url
 
 _STATIC_DIR = pathlib.Path(__file__).parent / "static"
@@ -173,9 +173,37 @@ def _register_routes(app: FastAPI) -> None:
                 data = RepoInfo(**{**raw, "cached": False})
             return AnalyzeResult(type="repo", url=url, data=data)
 
+        if parsed.type == UrlType.PR:
+            username = parsed.params["username"]
+            repo = parsed.params["repo"]
+            number = int(parsed.params["number"])
+            key = f"pr:{username.lower()}/{repo.lower()}/{number}"
+            cached_data = cache.get(key)
+            if cached_data is not None:
+                data = PRInfo(**{**cached_data, "cached": True})
+            else:
+                raw = client.get_pr(username, repo, number)
+                cache.set(key, raw)
+                data = PRInfo(**{**raw, "cached": False})
+            return AnalyzeResult(type="pr", url=url, data=data)
+
+        if parsed.type == UrlType.ISSUE:
+            username = parsed.params["username"]
+            repo = parsed.params["repo"]
+            number = int(parsed.params["number"])
+            key = f"issue:{username.lower()}/{repo.lower()}/{number}"
+            cached_data = cache.get(key)
+            if cached_data is not None:
+                data = IssueInfo(**{**cached_data, "cached": True})
+            else:
+                raw = client.get_issue(username, repo, number)
+                cache.set(key, raw)
+                data = IssueInfo(**{**raw, "cached": False})
+            return AnalyzeResult(type="issue", url=url, data=data)
+
         raise HTTPException(
             status_code=422,
-            detail="Unsupported URL. Provide a GitHub user or repository URL.",
+            detail="Unsupported URL. Provide a GitHub user, repository, PR, or issue URL.",
         )
 
 

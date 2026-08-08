@@ -65,8 +65,30 @@ class GitHubClient:
         }
 
     def get_repo(self, username: str, repo: str) -> dict:
-        """Return structured data for a repository."""
+        """Return structured data for a repository including contributors and languages."""
         r = self._get(f"/repos/{username}/{repo}").json()
+
+        try:
+            raw_contributors = self._get(
+                f"/repos/{username}/{repo}/contributors?per_page=5"
+            ).json()
+            contributors = [
+                {
+                    "username": c["login"],
+                    "contributions": c["contributions"],
+                    "avatar_url": c.get("avatar_url", ""),
+                }
+                for c in raw_contributors
+                if isinstance(c, dict) and "login" in c
+            ]
+        except GitHubError:
+            contributors = []
+
+        try:
+            languages = self._get(f"/repos/{username}/{repo}/languages").json()
+        except GitHubError:
+            languages = {}
+
         return {
             "owner": r["owner"]["login"],
             "name": r["name"],
@@ -78,6 +100,54 @@ class GitHubClient:
             "language": r.get("language"),
             "topics": r.get("topics", []),
             "updated_at": r.get("updated_at", ""),
+            "contributors": contributors,
+            "languages": languages,
+        }
+
+    def get_pr(self, username: str, repo: str, number: int) -> dict:
+        """Return structured data for a pull request."""
+        pr = self._get(f"/repos/{username}/{repo}/pulls/{number}").json()
+
+        reviewers = list({
+            r["user"]["login"]
+            for r in self._get(
+                f"/repos/{username}/{repo}/pulls/{number}/reviews"
+            ).json()
+            if r.get("user")
+        })
+
+        state = "merged" if pr.get("merged_at") else pr.get("state", "open")
+        return {
+            "number": pr["number"],
+            "title": pr["title"],
+            "state": state,
+            "author": pr["user"]["login"],
+            "base": pr["base"]["ref"],
+            "head": pr["head"]["ref"],
+            "additions": pr.get("additions", 0),
+            "deletions": pr.get("deletions", 0),
+            "changed_files": pr.get("changed_files", 0),
+            "comments": pr.get("comments", 0),
+            "review_comments": pr.get("review_comments", 0),
+            "reviewers": reviewers,
+            "created_at": pr.get("created_at", ""),
+            "merged_at": pr.get("merged_at"),
+        }
+
+    def get_issue(self, username: str, repo: str, number: int) -> dict:
+        """Return structured data for an issue."""
+        issue = self._get(f"/repos/{username}/{repo}/issues/{number}").json()
+
+        return {
+            "number": issue["number"],
+            "title": issue["title"],
+            "state": issue.get("state", "open"),
+            "author": issue["user"]["login"],
+            "labels": [lb["name"] for lb in issue.get("labels", [])],
+            "assignees": [a["login"] for a in issue.get("assignees", [])],
+            "comments": issue.get("comments", 0),
+            "created_at": issue.get("created_at", ""),
+            "closed_at": issue.get("closed_at"),
         }
 
     def close(self) -> None:
