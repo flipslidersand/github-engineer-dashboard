@@ -64,5 +64,21 @@ class GitHubClient:
             "total_events": len(events),
         }
 
+    def get_repo(self, username: str, repo: str) -> dict:
+        """Return structured data for a repository."""
+        r = self._get(f"/repos/{username}/{repo}").json()
+        return {
+            "owner": r["owner"]["login"],
+            "name": r["name"],
+            "full_name": r["full_name"],
+            "description": r.get("description"),
+            "stars": r.get("stargazers_count", 0),
+            "forks": r.get("forks_count", 0),
+            "open_issues": r.get("open_issues_count", 0),
+            "language": r.get("language"),
+            "topics": r.get("topics", []),
+            "updated_at": r.get("updated_at", ""),
+        }
+
     def close(self) -> None:
         self._client.close()

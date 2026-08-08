@@ -49,6 +49,22 @@ def _mock_github(counter: dict) -> GitHubClient:
             )
         if path == "/users/octocat/events/public":
             return httpx.Response(200, json=[{"type": "PushEvent"}])
+        if path == "/repos/torvalds/linux":
+            return httpx.Response(
+                200,
+                json={
+                    "owner": {"login": "torvalds"},
+                    "name": "linux",
+                    "full_name": "torvalds/linux",
+                    "description": "Linux kernel source tree",
+                    "stargazers_count": 185000,
+                    "forks_count": 57000,
+                    "open_issues_count": 400,
+                    "language": "C",
+                    "topics": ["kernel", "linux"],
+                    "updated_at": "2026-08-01T00:00:00Z",
+                },
+            )
         return httpx.Response(404, json={"message": "not found"})
 
     http = httpx.Client(transport=httpx.MockTransport(handler))
@@ -111,3 +127,48 @@ def test_user_activity_and_caching(client):
 def test_unknown_user_returns_404(client):
     r = client.get("/api/users/ghost/activity", headers={"X-GitHub-Token": "abc"})
     assert r.status_code == 404
+
+
+# ── /api/analyze ──────────────────────────────────────────────────────────────
+
+
+def test_analyze_user_url(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/analyze?url=https://github.com/octocat", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["type"] == "user"
+    assert body["data"]["username"] == "octocat"
+    assert body["data"]["cached"] is False
+
+
+def test_analyze_repo_url(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/analyze?url=https://github.com/torvalds/linux", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["type"] == "repo"
+    assert body["data"]["full_name"] == "torvalds/linux"
+    assert body["data"]["stars"] == 185000
+    assert body["data"]["language"] == "C"
+    assert body["data"]["cached"] is False
+
+
+def test_analyze_repo_caching(client):
+    h = {"X-GitHub-Token": "abc"}
+    client.get("/api/analyze?url=https://github.com/torvalds/linux", headers=h)
+    calls_after_first = client.counter["calls"]
+    r2 = client.get("/api/analyze?url=https://github.com/torvalds/linux", headers=h)
+    assert r2.json()["data"]["cached"] is True
+    assert client.counter["calls"] == calls_after_first
+
+
+def test_analyze_unknown_url_returns_422(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/analyze?url=https://example.com/foo", headers=h)
+    assert r.status_code == 422
+
+
+def test_analyze_requires_token(client):
+    r = client.get("/api/analyze?url=https://github.com/octocat")
+    assert r.status_code == 401
