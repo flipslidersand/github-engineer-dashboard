@@ -100,6 +100,23 @@
     vertical-align: middle; margin-right: 6px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* AI review */
+  .review-btn {
+    margin-top: 14px; padding: 7px 16px; background: #6e40c9; color: #fff;
+    border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+  }
+  .review-btn:hover { background: #8957e5; }
+  .review-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .review-box {
+    margin-top: 14px; background: #0d1117; border: 1px solid #30363d;
+    border-radius: 6px; padding: 16px; font-size: 0.85rem; line-height: 1.6;
+  }
+  .review-box h2 { font-size: 0.95rem; color: #f0f6fc; margin: 12px 0 6px; }
+  .review-box h2:first-child { margin-top: 0; }
+  .review-box ul { padding-left: 18px; }
+  .review-box li { margin: 4px 0; color: #c9d1d9; }
+  .review-box p { color: #c9d1d9; margin: 4px 0; }
+  .review-box code { background: #1f2937; padding: 1px 5px; border-radius: 3px; font-size: 0.82rem; }
 </style>
 </head>
 <body>
@@ -216,7 +233,43 @@ function renderPR(d) {
     </div>
     <div class="meta">Author: <strong>${d.author}</strong> · ${d.base} ← ${d.head}</div>
     ${reviewers}
-    <div class="meta">Opened: ${d.created_at.slice(0,10)}${d.merged_at ? ' · Merged: ' + d.merged_at.slice(0,10) : ''}</div>`);
+    <div class="meta">Opened: ${d.created_at.slice(0,10)}${d.merged_at ? ' · Merged: ' + d.merged_at.slice(0,10) : ''}</div>
+    <button class="review-btn" id="reviewBtn" onclick="fetchReview()">🤖 AI Review</button>
+    <div id="reviewSection"></div>`);
+}
+
+function mdToHtml(md) {
+  return md
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
+    .replace(/^- (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/s, m => `<ul>${m}</ul>`)
+    .replace(/^(?!<[hul])(.+)$/gm,'<p>$1</p>')
+    .replace(/<p><\/p>/g,'');
+}
+
+async function fetchReview() {
+  const url = document.getElementById('urlInput').value.trim();
+  const btn = document.getElementById('reviewBtn');
+  const sec = document.getElementById('reviewSection');
+  btn.disabled = true;
+  btn.textContent = '⏳ Reviewing…';
+  sec.innerHTML = '';
+  try {
+    const res = await fetch(`${API}/api/review?url=${encodeURIComponent(url)}`);
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || e.error || res.statusText); }
+    const r = await res.json();
+    const cached = r.cached ? '<span class="badge cached">cached</span>' : '<span class="badge">live</span>';
+    sec.innerHTML = `<div class="section-title">AI Review ${cached}</div><div class="review-box">${mdToHtml(r.markdown)}</div>`;
+    btn.textContent = '🤖 AI Review';
+    btn.disabled = false;
+  } catch(e) {
+    sec.innerHTML = `<span class="err">Review error: ${e.message}</span>`;
+    btn.textContent = '🤖 AI Review';
+    btn.disabled = false;
+  }
 }
 
 function renderIssue(d) {

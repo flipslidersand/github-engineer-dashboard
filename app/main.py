@@ -26,7 +26,8 @@ from . import __version__
 from .cache import SQLiteCache
 from .config import Settings
 from .github_client import GitHubClient, GitHubError
-from .models import AnalyzeResult, Health, IssueInfo, PRInfo, RateLimit, RepoInfo, UserActivity
+from .models import AnalyzeResult, Health, IssueInfo, PRInfo, RateLimit, RepoInfo, ReviewResult, UserActivity
+from .reviewer import review_diff
 from .url_parser import UrlType, parse_github_url
 
 _STATIC_DIR = pathlib.Path(__file__).parent / "static"
@@ -205,6 +206,45 @@ def _register_routes(app: FastAPI) -> None:
             status_code=422,
             detail="Unsupported URL. Provide a GitHub user, repository, PR, or issue URL.",
         )
+
+    @app.get("/api/review", response_model=ReviewResult, tags=["github"])
+    def ai_review(
+        url: str,
+        client: GitHubClient = Depends(get_client),
+        cache: SQLiteCache = Depends(get_cache),
+        settings: Settings = Depends(get_settings),
+    ) -> ReviewResult:
+        if not settings.anthropic_api_key:
+            raise HTTPException(
+                status_code=503,
+                detail="AI review unavailable: ANTHROPIC_API_KEY not configured.",
+            )
+
+        parsed = parse_github_url(url)
+        if parsed.type != UrlType.PR:
+            raise HTTPException(status_code=422, detail="AI review requires a PR URL.")
+
+        username = parsed.params["username"]
+        repo = parsed.params["repo"]
+        number = int(parsed.params["number"])
+
+        cache_key = f"review:{username.lower()}/{repo.lower()}/{number}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return ReviewResult(**{**cached, "cached": True})
+
+        pr_meta = client.get_pr(username, repo, number)
+        diff = client.get_pr_diff(username, repo, number)
+        markdown = review_diff(diff, settings.anthropic_api_key)
+
+        raw = {
+            "url": url,
+            "pr_number": number,
+            "pr_title": pr_meta["title"],
+            "markdown": markdown,
+        }
+        cache.set(cache_key, raw)
+        return ReviewResult(**{**raw, "cached": False})
 
 
 # Module-level app for `uvicorn app.main:app`.

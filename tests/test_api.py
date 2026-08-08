@@ -2,16 +2,18 @@ import httpx
 import pytest
 from fastapi import Depends
 from fastapi.testclient import TestClient
+from unittest.mock import patch
 
 from app.config import Settings
 from app.github_client import GitHubClient
 from app.main import create_app, get_client, require_token
 
 
-def _settings(tmp_path) -> Settings:
+def _settings(tmp_path, *, anthropic_key: str | None = None) -> Settings:
     return Settings(
         github_api_url="https://api.github.com",
         github_token=None,  # force header-based auth
+        anthropic_api_key=anthropic_key,
         cache_db=str(tmp_path / "cache.db"),
         cache_ttl_seconds=300,
         cors_origins=("*",),
@@ -93,6 +95,8 @@ def _mock_github(counter: dict) -> GitHubClient:
             )
         if path == "/repos/torvalds/linux/pulls/1/reviews":
             return httpx.Response(200, json=[])
+        if path == "/repos/torvalds/linux/pulls/1" and request.headers.get("accept", "").endswith(".diff"):
+            return httpx.Response(200, text="diff --git a/foo.py b/foo.py\n+print('hello')\n")
         if path == "/repos/torvalds/linux/issues/5":
             return httpx.Response(
                 200,
@@ -242,3 +246,72 @@ def test_analyze_issue_url(client):
     assert body["data"]["title"] == "Memory leak"
     assert body["data"]["labels"] == ["bug"]
     assert body["data"]["cached"] is False
+
+
+# ── /api/review ───────────────────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def review_client(tmp_path):
+    counter: dict = {}
+    app = create_app(_settings(tmp_path, anthropic_key="test-anthropic-key"))
+
+    def override_client(_token: str = Depends(require_token)):
+        gh = _mock_github(counter)
+        try:
+            yield gh
+        finally:
+            gh.close()
+
+    app.dependency_overrides[get_client] = override_client
+    with TestClient(app) as c:
+        c.counter = counter  # type: ignore[attr-defined]
+        yield c
+
+
+def test_review_pr_url(review_client):
+    h = {"X-GitHub-Token": "abc"}
+    with patch("app.main.review_diff", return_value="## Summary\nLooks good.\n## Verdict\n✅ **Looks good**") as mock_rd:
+        r = review_client.get("/api/review?url=https://github.com/torvalds/linux/pull/1", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pr_number"] == 1
+    assert body["pr_title"] == "Fix bug"
+    assert "Looks good" in body["markdown"]
+    assert body["cached"] is False
+    mock_rd.assert_called_once()
+
+
+def test_review_caching(review_client):
+    h = {"X-GitHub-Token": "abc"}
+    with patch("app.main.review_diff", return_value="## Summary\nOK.") as mock_rd:
+        review_client.get("/api/review?url=https://github.com/torvalds/linux/pull/1", headers=h)
+        r2 = review_client.get("/api/review?url=https://github.com/torvalds/linux/pull/1", headers=h)
+    assert r2.json()["cached"] is True
+    mock_rd.assert_called_once()  # only called once due to cache
+
+
+def test_review_requires_pr_url(review_client):
+    h = {"X-GitHub-Token": "abc"}
+    r = review_client.get("/api/review?url=https://github.com/torvalds/linux", headers=h)
+    assert r.status_code == 422
+
+
+def test_review_unavailable_without_api_key(tmp_path):
+    app = create_app(_settings(tmp_path, anthropic_key=None))
+    counter: dict = {}
+
+    def override_client(_token: str = Depends(require_token)):
+        gh = _mock_github(counter)
+        try:
+            yield gh
+        finally:
+            gh.close()
+
+    app.dependency_overrides[get_client] = override_client
+    with TestClient(app) as c:
+        r = c.get(
+            "/api/review?url=https://github.com/torvalds/linux/pull/1",
+            headers={"X-GitHub-Token": "abc"},
+        )
+    assert r.status_code == 503

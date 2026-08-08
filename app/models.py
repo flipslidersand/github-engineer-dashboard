@@ -80,6 +80,14 @@ class IssueInfo(BaseModel):
     cached: bool = False
 
 
+class ReviewResult(BaseModel):
+    url: str
+    pr_number: int
+    pr_title: str
+    markdown: str
+    cached: bool = False
+
+
 class AnalyzeResult(BaseModel):
     type: str  # "user" | "repo" | "pr" | "issue"
     url: str

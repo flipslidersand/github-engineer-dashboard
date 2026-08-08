@@ -150,5 +150,16 @@ class GitHubClient:
             "closed_at": issue.get("closed_at"),
         }
 
+    def get_pr_diff(self, username: str, repo: str, number: int) -> str:
+        """Return the raw unified diff for a pull request."""
+        resp = self._client.get(
+            f"{self._base_url}/repos/{username}/{repo}/pulls/{number}",
+            headers={**self._headers, "Accept": "application/vnd.github.v3.diff"},
+        )
+        if resp.status_code >= 400:
+            message = resp.json().get("message", resp.text) if resp.content else resp.text
+            raise GitHubError(resp.status_code, message)
+        return resp.text
+
     def close(self) -> None:
         self._client.close()
