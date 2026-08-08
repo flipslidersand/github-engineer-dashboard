@@ -19,11 +19,17 @@ class RateLimit(BaseModel):
 class UserActivity(BaseModel):
     username: str
     name: str | None = None
+    bio: str | None = None
+    location: str | None = None
+    company: str | None = None
+    blog: str | None = None
+    created_at: str | None = None
     public_repos: int
     followers: int
     following: int
     event_counts: dict[str, int]
     total_events: int
+    repo_languages: dict[str, int] = {}
     cached: bool = False
 
 

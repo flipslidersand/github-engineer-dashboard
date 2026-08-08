@@ -168,10 +168,30 @@ function renderUser(d) {
   const evCards = events.length
     ? events.map(([t,c])=>`<div class="ev-card"><div class="ev-count">${c}</div><div class="ev-type">${t.replace('Event','')}</div></div>`).join('')
     : '<span style="color:#8b949e;">No recent public events.</span>';
+
+  const metaParts = [
+    d.company ? `🏢 ${d.company}` : '',
+    d.location ? `📍 ${d.location}` : '',
+    d.blog ? `🔗 <a href="${d.blog}" target="_blank" style="color:#58a6ff;">${d.blog}</a>` : '',
+    d.created_at ? `📅 joined ${d.created_at.slice(0,7)}` : '',
+  ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+
+  const totalLang = Object.values(d.repo_languages||{}).reduce((a,b)=>a+b,0)||1;
+  const langBar = Object.entries(d.repo_languages||{}).map(([l,n])=>
+    `<div style="width:${(n/totalLang*100).toFixed(1)}%;background:${langColor(l)};"></div>`).join('');
+  const langLegend = Object.entries(d.repo_languages||{}).map(([l,n])=>
+    `<span class="lang-item"><span class="lang-dot" style="background:${langColor(l)};"></span>${l} (${n})</span>`).join('');
+  const langSection = Object.keys(d.repo_languages||{}).length ? `
+    <div class="section-title">Languages (owned repos)</div>
+    <div class="lang-bar">${langBar}</div>
+    <div class="lang-legend">${langLegend}</div>` : '';
+
   show(`
     <div>
       <strong style="font-size:1.1rem;">${d.name ? `${d.name} (${d.username})` : d.username}</strong>
       ${badges(d,'user')}
+      ${d.bio ? `<div style="font-size:0.875rem;color:#8b949e;margin-top:4px;">${d.bio}</div>` : ''}
+      ${metaParts ? `<div class="meta" style="margin-top:6px;">${metaParts}</div>` : ''}
       <div class="stats">
         <div class="stat-item"><div class="value">${d.public_repos}</div><div class="label">Repos</div></div>
         <div class="stat-item"><div class="value">${d.followers}</div><div class="label">Followers</div></div>
@@ -179,6 +199,7 @@ function renderUser(d) {
         <div class="stat-item"><div class="value">${d.total_events}</div><div class="label">Events</div></div>
       </div>
     </div>
+    ${langSection}
     <div class="section-title">Recent Activity</div>
     <div class="ev-grid">${evCards}</div>`);
 }
