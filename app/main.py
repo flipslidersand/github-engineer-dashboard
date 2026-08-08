@@ -26,7 +26,8 @@ from . import __version__
 from .cache import SQLiteCache
 from .config import Settings
 from .github_client import GitHubClient, GitHubError
-from .models import Health, RateLimit, UserActivity
+from .models import AnalyzeResult, Health, RateLimit, RepoInfo, UserActivity
+from .url_parser import UrlType, parse_github_url
 
 _STATIC_DIR = pathlib.Path(__file__).parent / "static"
 
@@ -138,6 +139,44 @@ def _register_routes(app: FastAPI) -> None:
         data = client.get_user_activity(username)
         cache.set(key, data)
         return UserActivity(**{**data, "cached": False})
+
+    @app.get("/api/analyze", response_model=AnalyzeResult, tags=["github"])
+    def analyze(
+        url: str,
+        client: GitHubClient = Depends(get_client),
+        cache: SQLiteCache = Depends(get_cache),
+    ) -> AnalyzeResult:
+        parsed = parse_github_url(url)
+
+        if parsed.type == UrlType.USER:
+            username = parsed.params["username"]
+            key = f"activity:{username.lower()}"
+            cached_data = cache.get(key)
+            if cached_data is not None:
+                data = UserActivity(**{**cached_data, "cached": True})
+            else:
+                raw = client.get_user_activity(username)
+                cache.set(key, raw)
+                data = UserActivity(**{**raw, "cached": False})
+            return AnalyzeResult(type="user", url=url, data=data)
+
+        if parsed.type == UrlType.REPO:
+            username = parsed.params["username"]
+            repo = parsed.params["repo"]
+            key = f"repo:{username.lower()}/{repo.lower()}"
+            cached_data = cache.get(key)
+            if cached_data is not None:
+                data = RepoInfo(**{**cached_data, "cached": True})
+            else:
+                raw = client.get_repo(username, repo)
+                cache.set(key, raw)
+                data = RepoInfo(**{**raw, "cached": False})
+            return AnalyzeResult(type="repo", url=url, data=data)
+
+        raise HTTPException(
+            status_code=422,
+            detail="Unsupported URL. Provide a GitHub user or repository URL.",
+        )
 
 
 # Module-level app for `uvicorn app.main:app`.
