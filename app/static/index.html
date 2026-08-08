@@ -84,7 +84,7 @@
 <div class="card">
   <h2>User Activity</h2>
   <div class="row" style="margin-bottom:12px;">
-    <input type="text" id="usernameInput" placeholder="GitHub username" autofocus>
+    <input type="text" id="usernameInput" placeholder="https://github.com/username" autofocus>
     <button onclick="fetchActivity()">Look up</button>
   </div>
   <div id="activityContent"></div>
@@ -140,9 +140,22 @@ function startCountdown(resetEpoch) {
 }
 
 // ── User Activity ─────────────────────────────────────────────────────────────
+function parseUsername(input) {
+  try {
+    const url = new URL(input.includes('://') ? input : `https://${input}`);
+    if (url.hostname === 'github.com') {
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (parts.length >= 1) return parts[0];
+    }
+  } catch {}
+  // fall back: treat raw input as username
+  return input.includes('/') ? null : input;
+}
+
 async function fetchActivity() {
-  const username = document.getElementById('usernameInput').value.trim();
-  if (!username) { document.getElementById('activityContent').innerHTML = '<span class="err">Enter a username.</span>'; return; }
+  const raw = document.getElementById('usernameInput').value.trim();
+  const username = parseUsername(raw);
+  if (!username) { document.getElementById('activityContent').innerHTML = '<span class="err">GitHub プロフィール URL を入力してください（例: https://github.com/username）</span>'; return; }
   document.getElementById('activityContent').innerHTML = '<span class="spinner"></span> Loading…';
   try {
     const res = await fetch(`${API}/api/users/${encodeURIComponent(username)}/activity`);
