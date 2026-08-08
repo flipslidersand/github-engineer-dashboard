@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 class UrlType(str, Enum):
     USER = "user"
+    ORG = "org"
     REPO = "repo"
     PR = "pr"
     ISSUE = "issue"
@@ -38,6 +39,11 @@ def parse_github_url(raw: str) -> ParsedGitHubUrl:
         return ParsedGitHubUrl(type=UrlType.UNKNOWN, params={})
 
     parts = [p for p in parsed.path.split("/") if p]
+
+    # /orgs/{org}[/...] — organization landing page. GitHub reserves the
+    # "orgs" path segment, so it can never collide with a real user/repo.
+    if len(parts) >= 2 and parts[0] == "orgs":
+        return ParsedGitHubUrl(type=UrlType.ORG, params={"org": parts[1]})
 
     if len(parts) == 1:
         return ParsedGitHubUrl(type=UrlType.USER, params={"username": parts[0]})

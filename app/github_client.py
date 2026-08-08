@@ -18,6 +18,9 @@ class GitHubError(Exception):
 
 
 class GitHubClient:
+    _REPOS_PAGE_SIZE = 100
+    _REPOS_MAX_PAGES = 10  # bound rate-limit usage: up to 1000 repos aggregated
+
     def __init__(
         self,
         token: str,
@@ -160,6 +163,56 @@ class GitHubClient:
             message = resp.json().get("message", resp.text) if resp.content else resp.text
             raise GitHubError(resp.status_code, message)
         return resp.text
+
+    def _aggregate_repo_list(self, base_path: str, exclude_forks: bool) -> dict:
+        """Paginate an owner's repo list and aggregate stars / forks / languages.
+
+        ``base_path`` is e.g. ``/users/{name}/repos`` or ``/orgs/{name}/repos``.
+        Pagination is capped at ``_REPOS_MAX_PAGES`` to bound rate-limit usage;
+        ``truncated`` is set when the cap is hit and more repos may remain.
+        Language distribution counts each repo's primary language (cheap: no
+        per-repo ``/languages`` calls).
+        """
+        repos: list[dict] = []
+        truncated = False
+        for page in range(1, self._REPOS_MAX_PAGES + 1):
+            sep = "&" if "?" in base_path else "?"
+            batch = self._get(
+                f"{base_path}{sep}per_page={self._REPOS_PAGE_SIZE}&page={page}"
+            ).json()
+            if not isinstance(batch, list) or not batch:
+                break
+            repos.extend(batch)
+            if len(batch) < self._REPOS_PAGE_SIZE:
+                break
+        else:
+            # Loop ran every page without an early break → more may remain.
+            truncated = True
+
+        if exclude_forks:
+            repos = [r for r in repos if not r.get("fork")]
+
+        languages = Counter(r.get("language") for r in repos if r.get("language"))
+        return {
+            "repo_count": len(repos),
+            "total_stars": sum(r.get("stargazers_count", 0) for r in repos),
+            "total_forks": sum(r.get("forks_count", 0) for r in repos),
+            "language_distribution": dict(languages.most_common()),
+            "forks_excluded": exclude_forks,
+            "truncated": truncated,
+        }
+
+    def get_user_repos_summary(
+        self, username: str, *, exclude_forks: bool = False
+    ) -> dict:
+        """Aggregate stars / forks / language distribution across a user's repos."""
+        data = self._aggregate_repo_list(f"/users/{username}/repos", exclude_forks)
+        return {**data, "owner": username, "owner_type": "user"}
+
+    def get_org_repos_summary(self, org: str, *, exclude_forks: bool = False) -> dict:
+        """Aggregate stars / forks / language distribution across an org's repos."""
+        data = self._aggregate_repo_list(f"/orgs/{org}/repos", exclude_forks)
+        return {**data, "owner": org, "owner_type": "org"}
 
     def close(self) -> None:
         self._client.close()

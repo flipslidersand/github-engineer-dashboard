@@ -94,6 +94,20 @@ class AnalyzeResult(BaseModel):
     data: Any
 
 
+class CrossRepoSummary(BaseModel):
+    """Cross-repository aggregate for a user or organization (Issue #76)."""
+
+    owner: str
+    owner_type: str  # "user" | "org"
+    repo_count: int
+    total_stars: int
+    total_forks: int
+    language_distribution: dict[str, int] = {}  # primary language → repo count
+    forks_excluded: bool = False
+    truncated: bool = False  # True when the repo-page cap was reached
+    cached: bool = False
+
+
 class Health(BaseModel):
     status: str
     version: str

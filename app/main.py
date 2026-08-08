@@ -4,6 +4,7 @@ Endpoints:
   GET /healthz                         — liveness (public)
   GET /api/rate-limit                  — current GitHub rate limit (Issue #1)
   GET /api/users/{username}/activity   — profile + recent event summary (cached)
+  GET /api/summary                     — cross-repo aggregate for a user/org (Issue #76)
 
 Authentication: every /api route requires a GitHub token, supplied via the
 `X-GitHub-Token` header or the server-wide `GITHUB_TOKEN` env var. Requiring a
@@ -26,7 +27,17 @@ from . import __version__
 from .cache import SQLiteCache
 from .config import Settings
 from .github_client import GitHubClient, GitHubError
-from .models import AnalyzeResult, Health, IssueInfo, PRInfo, RateLimit, RepoInfo, ReviewResult, UserActivity
+from .models import (
+    AnalyzeResult,
+    CrossRepoSummary,
+    Health,
+    IssueInfo,
+    PRInfo,
+    RateLimit,
+    RepoInfo,
+    ReviewResult,
+    UserActivity,
+)
 from .reviewer import review_diff
 from .url_parser import UrlType, parse_github_url
 
@@ -140,6 +151,39 @@ def _register_routes(app: FastAPI) -> None:
         data = client.get_user_activity(username)
         cache.set(key, data)
         return UserActivity(**{**data, "cached": False})
+
+    @app.get("/api/summary", response_model=CrossRepoSummary, tags=["github"])
+    def summary(
+        url: str,
+        exclude_forks: bool = False,
+        client: GitHubClient = Depends(get_client),
+        cache: SQLiteCache = Depends(get_cache),
+    ) -> CrossRepoSummary:
+        parsed = parse_github_url(url)
+
+        if parsed.type == UrlType.USER:
+            owner = parsed.params["username"]
+            owner_key = f"user:{owner.lower()}"
+        elif parsed.type == UrlType.ORG:
+            owner = parsed.params["org"]
+            owner_key = f"org:{owner.lower()}"
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail="Summary requires a GitHub user or organization URL.",
+            )
+
+        key = f"summary:{owner_key}:forks={int(exclude_forks)}"
+        cached_data = cache.get(key)
+        if cached_data is not None:
+            return CrossRepoSummary(**{**cached_data, "cached": True})
+
+        if parsed.type == UrlType.USER:
+            raw = client.get_user_repos_summary(owner, exclude_forks=exclude_forks)
+        else:
+            raw = client.get_org_repos_summary(owner, exclude_forks=exclude_forks)
+        cache.set(key, raw)
+        return CrossRepoSummary(**{**raw, "cached": False})
 
     @app.get("/api/analyze", response_model=AnalyzeResult, tags=["github"])
     def analyze(
