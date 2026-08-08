@@ -1,30 +1,60 @@
 # github-engineer-dashboard
 
-Developer activity dashboard backed by the GitHub API. Phase 1 is a Python /
-FastAPI service; Phase 2 re-implements the same OpenAPI contract in Go for a
-performance benchmark.
+GitHub API で任意ユーザーの開発アクティビティを可視化するダッシュボード。
 
-## Phase 1 (this scaffold)
+- **Phase 1** — Python / FastAPI バックエンド + vanilla HTML フロント
+- **Phase 2** — 同一 OpenAPI 契約を Go で再実装し、レイテンシを比較 (WIP)
 
-- `GET /` — フロント UI 配信（`static/index.html`）。`STATIC_DIR` 未設定時はスキップ (Issue #55)
-- `GET /static/*` — 静的アセット配信（`STATIC_DIR` 設定時のみ有効）
-- `GET /healthz` — liveness (public)
-- `GET /api/rate-limit` — live GitHub rate-limit quota (Issue #1)
-- `GET /api/users/{username}/activity` — profile + recent public-event summary, cached
+## デモ
 
-### 認証 (Issue #1)
+|           | URL                              | 状態   |
+| --------- | -------------------------------- | ------ |
+| Python 版 | TBD (Render deploy #63 後に追記) | 準備中 |
+| Go 版     | TBD (Phase 2 完成後)             | 未実装 |
 
-`/api/*` は GitHub トークンが必須。以下のいずれかで渡す:
+## 技術スタック
 
-- リクエストヘッダー `X-GitHub-Token: <token>`（推奨・UI から入力）
-- 環境変数 `GITHUB_TOKEN`（サーバー全体の既定）
+| レイヤー       | 技術                            |
+| -------------- | ------------------------------- |
+| API (Phase 1)  | Python 3.12 / FastAPI / Uvicorn |
+| API (Phase 2)  | Go 1.22 / net/http              |
+| キャッシュ     | SQLite (TTL 300s)               |
+| フロントエンド | vanilla HTML + CSS + Fetch API  |
+| デプロイ       | Render (render.yaml)            |
+| テスト         | pytest                          |
 
-トークンを使うことで rate limit が 60 → 5000 req/h に上がり、アクセス制御も兼ねる。
+## パフォーマンス比較 (Phase 2 完成後に更新)
 
-### レート制限対策 (Issue #1)
+| 実装             | p50 レイテンシ | p99 レイテンシ | メモリ |
+| ---------------- | -------------- | -------------- | ------ |
+| Python (FastAPI) | - ms           | - ms           | - MB   |
+| Go (net/http)    | - ms           | - ms           | - MB   |
 
-- レスポンスを SQLite にキャッシュ（TTL 既定 300 秒）→ 枯渇時もキャッシュで画面が止まらない
-- `/api/rate-limit` で残量を可視化（キャッシュしない）
+> ベンチマーク: `wrk -t4 -c100 -d30s http://localhost:8000/api/users/torvalds/activity`
+
+## エンドポイント
+
+- `GET /` — フロント UI 配信（`static/index.html`）
+- `GET /static/*` — 静的アセット配信
+- `GET /healthz` — liveness (認証不要)
+- `GET /api/rate-limit` — GitHub rate-limit 残量
+- `GET /api/analyze?url=` — GitHub URL 分析（user / repo 自動判定、キャッシュ付き）
+- `GET /api/users/{username}/activity` — プロフィール + 直近イベントサマリー（SQLite キャッシュ付き）
+
+### 認証
+
+GitHub API の rate limit は未認証で 60 req/h、PAT で 5000 req/h。  
+サーバー側に Fine-grained PAT を設定（ユーザーにトークン入力は不要）。
+
+```bash
+# Render Dashboard または .env で設定
+GITHUB_TOKEN=ghp_xxxxxxxxxxxx   # Fine-grained PAT (public_repos: read-only)
+```
+
+### レート制限対策
+
+- SQLite に TTL 300s でキャッシュ → rate limit 枯渇時も画面が止まらない
+- `/api/rate-limit` で残量をリアルタイム表示（キャッシュなし）
 
 ## 開発
 
@@ -33,36 +63,46 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # ローカル起動
-export GITHUB_TOKEN=ghp_xxx        # 任意（ヘッダーでも可）
+export GITHUB_TOKEN=ghp_xxx
 uvicorn app.main:app --reload
+
+# フロントエンド: static/index.html をブラウザで開く
 
 # テスト
 pytest -q
 ```
 
-OpenAPI ドキュメント: 起動後 `http://localhost:8000/docs`。
+OpenAPI ドキュメント: 起動後 `http://localhost:8000/docs`
 
-## デプロイ (Issue #4)
+## デプロイ
 
-`render.yaml` を同梱。Render で Blueprint として読み込むと Python web service が作られる。
-`GITHUB_TOKEN` / `CORS_ORIGINS` は Render Dashboard で設定（平文コミット禁止）。
-ヘルスチェック: `/healthz`。
+`render.yaml` を同梱。Render > New Blueprint で読み込むと Python Web Service が作られる。
 
-## API 契約 (Issue #2)
+環境変数（Render Dashboard で設定、平文コミット禁止）:
 
-[`api.yaml`](./api.yaml) が Python 版から生成した OpenAPI spec。Phase 2 の Go 版は
-この spec に対してバリデーションし、エンドポイント/レスポンス形式のズレを防ぐ。
+| 変数           | 説明                                                |
+| -------------- | --------------------------------------------------- |
+| `GITHUB_TOKEN` | Fine-grained PAT (public repos read-only)           |
+| `CORS_ORIGINS` | フロントエンドの Origin (例: `https://example.com`) |
+
+ヘルスチェック: `GET /healthz`
 
 ## 構成
 
 ```text
 app/
-  main.py           FastAPI アプリ + ルート + DI
+  main.py           FastAPI アプリ + ルート
   config.py         環境変数 → Settings
   github_client.py  GitHub REST クライアント
   cache.py          SQLite TTL キャッシュ
-  models.py         Pydantic レスポンスモデル（共有契約）
-tests/              cache / github_client / api のユニットテスト
-api.yaml            生成された OpenAPI spec
+  models.py         Pydantic レスポンスモデル（Go 版との共有契約）
+static/
+  index.html        vanilla HTML ダッシュボード
+tests/              pytest スイート
+api.yaml            OpenAPI spec（Phase 2 Go 版のバリデーション基準）
 render.yaml         Render デプロイ定義
 ```
+
+## API 契約
+
+[`api.yaml`](./api.yaml) が正とする OpenAPI spec。Phase 2 の Go 版はこの spec に対してバリデーションし、エンドポイント / レスポンス形式のズレを防ぐ。
