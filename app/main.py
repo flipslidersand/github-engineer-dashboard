@@ -13,18 +13,22 @@ token both unlocks the 5000 req/h authenticated limit and gates access
 
 from __future__ import annotations
 
+import pathlib
 from contextlib import asynccontextmanager
 from typing import Iterator, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .cache import SQLiteCache
 from .config import Settings
 from .github_client import GitHubClient, GitHubError
 from .models import Health, RateLimit, UserActivity
+
+_STATIC_DIR = pathlib.Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -58,6 +62,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return JSONResponse(status_code=status, content={"error": exc.message})
 
     _register_routes(app)
+    if _STATIC_DIR.is_dir():
+        app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
     return app
 
 
@@ -100,6 +106,10 @@ def get_client(
 
 
 def _register_routes(app: FastAPI) -> None:
+    @app.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(_STATIC_DIR / "index.html")
+
     @app.get("/healthz", response_model=Health, tags=["meta"])
     def healthz() -> Health:
         return Health(status="ok", version=__version__)
