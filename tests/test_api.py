@@ -125,6 +125,28 @@ def _mock_github(counter: dict) -> GitHubClient:
                     "closed_at": None,
                 },
             )
+        if path == "/users/octocat/repos":
+            if request.url.params.get("page") != "1":
+                return httpx.Response(200, json=[])
+            return httpx.Response(
+                200,
+                json=[
+                    {"name": "a", "stargazers_count": 10, "forks_count": 2, "language": "Python", "fork": False},
+                    {"name": "b", "stargazers_count": 5, "forks_count": 0, "language": "Python", "fork": False},
+                    {"name": "c", "stargazers_count": 3, "forks_count": 1, "language": "Go", "fork": True},
+                    {"name": "d", "stargazers_count": 0, "forks_count": 0, "language": None, "fork": False},
+                ],
+            )
+        if path == "/orgs/acme/repos":
+            if request.url.params.get("page") != "1":
+                return httpx.Response(200, json=[])
+            return httpx.Response(
+                200,
+                json=[
+                    {"name": "x", "stargazers_count": 100, "forks_count": 20, "language": "Rust", "fork": False},
+                    {"name": "y", "stargazers_count": 50, "forks_count": 5, "language": "Rust", "fork": False},
+                ],
+            )
         return httpx.Response(404, json={"message": "not found"})
 
     http = httpx.Client(transport=httpx.MockTransport(handler))
@@ -266,6 +288,80 @@ def test_analyze_issue_url(client):
     assert body["data"]["title"] == "Memory leak"
     assert body["data"]["labels"] == ["bug"]
     assert body["data"]["cached"] is False
+
+
+# ── /api/summary (Issue #76) ─────────────────────────────────────────────────
+
+
+def test_summary_user_aggregates_all_repos(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/summary?url=https://github.com/octocat", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["owner"] == "octocat"
+    assert body["owner_type"] == "user"
+    assert body["repo_count"] == 4
+    assert body["total_stars"] == 18
+    assert body["total_forks"] == 3
+    assert body["language_distribution"] == {"Python": 2, "Go": 1}
+    assert body["forks_excluded"] is False
+    assert body["truncated"] is False
+    assert body["cached"] is False
+
+
+def test_summary_user_exclude_forks(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get(
+        "/api/summary?url=https://github.com/octocat&exclude_forks=true", headers=h
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["repo_count"] == 3  # forked repo "c" dropped
+    assert body["total_stars"] == 15
+    assert body["total_forks"] == 2
+    assert body["language_distribution"] == {"Python": 2}
+    assert body["forks_excluded"] is True
+
+
+def test_summary_org_url(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/summary?url=https://github.com/orgs/acme", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["owner"] == "acme"
+    assert body["owner_type"] == "org"
+    assert body["repo_count"] == 2
+    assert body["total_stars"] == 150
+    assert body["language_distribution"] == {"Rust": 2}
+
+
+def test_summary_caching_keyed_by_exclude_forks(client):
+    h = {"X-GitHub-Token": "abc"}
+    client.get("/api/summary?url=https://github.com/octocat", headers=h)
+    calls_after_first = client.counter["calls"]
+
+    # Same key → cache hit, no new upstream calls.
+    r2 = client.get("/api/summary?url=https://github.com/octocat", headers=h)
+    assert r2.json()["cached"] is True
+    assert client.counter["calls"] == calls_after_first
+
+    # Different exclude_forks → distinct cache key, upstream refetched.
+    r3 = client.get(
+        "/api/summary?url=https://github.com/octocat&exclude_forks=true", headers=h
+    )
+    assert r3.json()["cached"] is False
+    assert client.counter["calls"] > calls_after_first
+
+
+def test_summary_repo_url_returns_422(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/summary?url=https://github.com/torvalds/linux", headers=h)
+    assert r.status_code == 422
+
+
+def test_summary_requires_token(client):
+    r = client.get("/api/summary?url=https://github.com/octocat")
+    assert r.status_code == 401
 
 
 # ── /api/review ───────────────────────────────────────────────────────────────
