@@ -10,6 +10,7 @@ from dataclasses import dataclass
 class Settings:
     github_api_url: str
     github_token: str | None
+    anthropic_api_key: str | None
     cache_db: str
     cache_ttl_seconds: int
     cors_origins: tuple[str, ...]
@@ -21,8 +22,8 @@ class Settings:
             github_api_url=os.environ.get(
                 "GITHUB_API_URL", "https://api.github.com"
             ).rstrip("/"),
-            # Optional server-wide token; callers may also pass X-GitHub-Token.
             github_token=(os.environ.get("GITHUB_TOKEN") or None),
+            anthropic_api_key=(os.environ.get("ANTHROPIC_API_KEY") or None),
             cache_db=os.environ.get("CACHE_DB", "cache.db"),
             cache_ttl_seconds=int(os.environ.get("CACHE_TTL_SECONDS", "300")),
             cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),
