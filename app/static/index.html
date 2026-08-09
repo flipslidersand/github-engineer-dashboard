@@ -228,10 +228,16 @@ function renderUser(d) {
         <div class="stat-item"><div class="value">${d.public_repos}</div><div class="label">Repos</div></div>
         <div class="stat-item"><div class="value">${d.followers}</div><div class="label">Followers</div></div>
         <div class="stat-item"><div class="value">${d.following}</div><div class="label">Following</div></div>
+        ${d.total_stars ? `<div class="stat-item"><div class="value">⭐ ${d.total_stars.toLocaleString()}</div><div class="label">Total Stars</div></div>` : ''}
         <div class="stat-item"><div class="value">${d.total_events}</div><div class="label">Events</div></div>
       </div>
     </div>
     ${langSection}
+    ${(d.recent_forks||[]).length ? `
+      <div class="section-title">Recent Forks</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
+        ${d.recent_forks.map(f=>`<div class="meta">🍴 <a href="https://github.com/${f.full_name}" target="_blank" style="color:#58a6ff;">${f.full_name}</a> ⭐ ${f.stars} · ${f.updated_at.slice(0,10)}</div>`).join('')}
+      </div>` : ''}
     <div class="section-title">Recent Activity</div>
     <div class="ev-grid">${evCards}</div>`);
 }
@@ -263,6 +269,7 @@ function renderRepo(d) {
       <div class="stat-item"><div class="value">⭐ ${d.stars.toLocaleString()}</div><div class="label">Stars</div></div>
       <div class="stat-item"><div class="value">🍴 ${d.forks.toLocaleString()}</div><div class="label">Forks</div></div>
       <div class="stat-item"><div class="value">${d.open_issues}</div><div class="label">Open Issues</div></div>
+      ${d.open_pr_count != null ? `<div class="stat-item"><div class="value">${d.open_pr_count}</div><div class="label">Open PRs</div></div>` : ''}
       ${d.language ? `<div class="stat-item"><div class="value">${d.language}</div><div class="label">Language</div></div>` : ''}
       ${d.commits_last_30d != null ? `<div class="stat-item"><div class="value">${d.commits_last_30d}</div><div class="label">Commits (30d)</div></div>` : ''}
     </div>
@@ -293,7 +300,17 @@ function renderPR(d) {
     </div>
     <div class="meta">Author: <strong>${d.author}</strong> · ${d.base} ← ${d.head}</div>
     ${reviewers}
+    ${d.review_wait_hours != null ? `<div class="meta">⏱️ Review wait: <strong>${d.review_wait_hours}h</strong></div>` : ''}
     <div class="meta">Opened: ${d.created_at.slice(0,10)}${d.merged_at ? ' · Merged: ' + d.merged_at.slice(0,10) : ''}</div>
+    ${(d.changed_files_detail||[]).length ? `
+      <div class="section-title">Changed Files</div>
+      <div style="font-size:0.8rem;margin-top:4px;">
+        ${d.changed_files_detail.slice(0,10).map(f=>`
+          <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #21262d;">
+            <span style="color:#c9d1d9;font-family:monospace;">${f.filename}</span>
+            <span><span class="diff-add">+${f.additions}</span> <span class="diff-del">-${f.deletions}</span></span>
+          </div>`).join('')}
+      </div>` : ''}
     <button class="review-btn" id="reviewBtn" onclick="fetchReview()">🤖 AI Review</button>
     <div id="reviewSection"></div>`);
 }
@@ -350,6 +367,7 @@ function renderIssue(d) {
     </div>
     <div class="meta">Author: <strong>${d.author}</strong></div>
     ${assignees}
+    ${(d.related_prs||[]).length ? `<div class="meta">🔗 Related PRs: ${d.related_prs.map(n=>`<strong>#${n}</strong>`).join(', ')}</div>` : ''}
     <div class="meta">Opened: ${d.created_at.slice(0,10)}${d.closed_at ? ' · Closed: ' + d.closed_at.slice(0,10) : ''}</div>`);
 }
 

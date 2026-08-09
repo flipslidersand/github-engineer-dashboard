@@ -59,14 +59,30 @@ class GitHubClient:
         counts = Counter(e.get("type") or "Unknown" for e in events)
 
         try:
-            repos = self._get(f"/users/{username}/repos?per_page=100&type=owner").json()
+            repos = self._get(f"/users/{username}/repos?per_page=100").json()
             lang_counts: Counter = Counter()
+            total_stars = 0
+            recent_forks = []
             for r in repos:
-                if isinstance(r, dict) and r.get("language") and not r.get("fork"):
-                    lang_counts[r["language"]] += 1
+                if not isinstance(r, dict):
+                    continue
+                total_stars += r.get("stargazers_count", 0)
+                if not r.get("fork"):
+                    if r.get("language"):
+                        lang_counts[r["language"]] += 1
+                else:
+                    recent_forks.append({
+                        "name": r["name"],
+                        "full_name": r.get("full_name", ""),
+                        "stars": r.get("stargazers_count", 0),
+                        "updated_at": r.get("updated_at", ""),
+                    })
             repo_languages = dict(lang_counts.most_common(8))
+            recent_forks = sorted(recent_forks, key=lambda x: x["updated_at"], reverse=True)[:3]
         except GitHubError:
             repo_languages = {}
+            total_stars = 0
+            recent_forks = []
 
         return {
             "username": user["login"],
@@ -79,9 +95,11 @@ class GitHubClient:
             "public_repos": user.get("public_repos", 0),
             "followers": user.get("followers", 0),
             "following": user.get("following", 0),
+            "total_stars": total_stars,
             "event_counts": dict(counts),
             "total_events": len(events),
             "repo_languages": repo_languages,
+            "recent_forks": recent_forks,
         }
 
     def get_repo(self, username: str, repo: str) -> dict:
@@ -108,6 +126,12 @@ class GitHubClient:
             languages = self._get(f"/repos/{username}/{repo}/languages").json()
         except GitHubError:
             languages = {}
+
+        try:
+            open_prs = self._get(f"/repos/{username}/{repo}/pulls?state=open&per_page=100").json()
+            open_pr_count = len(open_prs) if isinstance(open_prs, list) else 0
+        except GitHubError:
+            open_pr_count = 0
 
         try:
             rel = self._get(f"/repos/{username}/{repo}/releases/latest").json()
@@ -145,6 +169,7 @@ class GitHubClient:
             "updated_at": r.get("updated_at", ""),
             "contributors": contributors,
             "languages": languages,
+            "open_pr_count": open_pr_count,
             "latest_release": latest_release,
             "latest_release_at": latest_release_at,
             "commits_last_30d": commits_last_30d,
@@ -152,15 +177,42 @@ class GitHubClient:
 
     def get_pr(self, username: str, repo: str, number: int) -> dict:
         """Return structured data for a pull request."""
+        from datetime import datetime, timezone
+
         pr = self._get(f"/repos/{username}/{repo}/pulls/{number}").json()
 
-        reviewers = list({
-            r["user"]["login"]
-            for r in self._get(
-                f"/repos/{username}/{repo}/pulls/{number}/reviews"
+        reviews_raw = self._get(
+            f"/repos/{username}/{repo}/pulls/{number}/reviews"
+        ).json()
+        reviewers = list({r["user"]["login"] for r in reviews_raw if r.get("user")})
+
+        review_wait_hours = None
+        if reviews_raw:
+            first_review_at = min(
+                r["submitted_at"] for r in reviews_raw if r.get("submitted_at")
+            )
+            try:
+                created = datetime.fromisoformat(pr["created_at"].replace("Z", "+00:00"))
+                reviewed = datetime.fromisoformat(first_review_at.replace("Z", "+00:00"))
+                review_wait_hours = round((reviewed - created).total_seconds() / 3600, 1)
+            except Exception:
+                pass
+
+        try:
+            files_raw = self._get(
+                f"/repos/{username}/{repo}/pulls/{number}/files?per_page=30"
             ).json()
-            if r.get("user")
-        })
+            changed_files_detail = [
+                {
+                    "filename": f["filename"],
+                    "additions": f.get("additions", 0),
+                    "deletions": f.get("deletions", 0),
+                }
+                for f in files_raw
+                if isinstance(f, dict)
+            ]
+        except GitHubError:
+            changed_files_detail = []
 
         state = "merged" if pr.get("merged_at") else pr.get("state", "open")
         return {
@@ -176,6 +228,8 @@ class GitHubClient:
             "comments": pr.get("comments", 0),
             "review_comments": pr.get("review_comments", 0),
             "reviewers": reviewers,
+            "review_wait_hours": review_wait_hours,
+            "changed_files_detail": changed_files_detail,
             "created_at": pr.get("created_at", ""),
             "merged_at": pr.get("merged_at"),
         }
@@ -183,6 +237,22 @@ class GitHubClient:
     def get_issue(self, username: str, repo: str, number: int) -> dict:
         """Return structured data for an issue."""
         issue = self._get(f"/repos/{username}/{repo}/issues/{number}").json()
+
+        try:
+            timeline = self._get(
+                f"/repos/{username}/{repo}/issues/{number}/timeline?per_page=100"
+            ).json()
+            related_prs = list({
+                event["source"]["issue"]["number"]
+                for event in timeline
+                if (
+                    isinstance(event, dict)
+                    and event.get("event") == "cross-referenced"
+                    and event.get("source", {}).get("issue", {}).get("pull_request")
+                )
+            })
+        except GitHubError:
+            related_prs = []
 
         return {
             "number": issue["number"],
@@ -192,6 +262,7 @@ class GitHubClient:
             "labels": [lb["name"] for lb in issue.get("labels", [])],
             "assignees": [a["login"] for a in issue.get("assignees", [])],
             "comments": issue.get("comments", 0),
+            "related_prs": related_prs,
             "created_at": issue.get("created_at", ""),
             "closed_at": issue.get("closed_at"),
         }
