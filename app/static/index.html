@@ -117,6 +117,24 @@
   .review-box li { margin: 4px 0; color: #c9d1d9; }
   .review-box p { color: #c9d1d9; margin: 4px 0; }
   .review-box code { background: #1f2937; padding: 1px 5px; border-radius: 3px; font-size: 0.82rem; }
+  /* benchmark */
+  .bench-row { display:flex; flex-direction:column; gap:10px; margin-top:14px; }
+  .bench-label { font-size:0.78rem; color:#8b949e; margin-bottom:4px; }
+  .bench-label strong { color:#f0f6fc; }
+  .bench-bar-wrap { background:#0d1117; border-radius:4px; height:26px; overflow:hidden; border:1px solid #30363d; }
+  .bench-bar {
+    height:100%; display:flex; align-items:center; padding:0 10px;
+    font-size:0.78rem; font-weight:600; color:#fff; border-radius:3px;
+    transition:width 0.4s ease; min-width:48px; white-space:nowrap;
+  }
+  .bench-bar-python { background:#3572A5; }
+  .bench-bar-go { background:#00ADD8; }
+  .bench-history { margin-top:16px; width:100%; border-collapse:collapse; font-size:0.8rem; }
+  .bench-history th { text-align:left; color:#8b949e; padding:4px 8px; border-bottom:1px solid #30363d; font-weight:500; }
+  .bench-history td { padding:4px 8px; border-bottom:1px solid #21262d; color:#c9d1d9; }
+  .bench-history td:nth-child(2), .bench-history td:nth-child(3) { text-align:right; font-family:monospace; }
+  .speedup-fast { color:#3fb950; font-weight:700; }
+  .speedup-slow { color:#f85149; font-weight:700; }
 </style>
 </head>
 <body>
@@ -127,6 +145,7 @@
     <button onclick="setMode('analyze')" id="tab-analyze" style="background:#238636;">Analyze</button>
     <button onclick="setMode('summary')" id="tab-summary" style="background:#21262d;">Summary</button>
     <button onclick="setMode('compare')" id="tab-compare" style="background:#21262d;">Compare</button>
+    <button onclick="setMode('benchmark')" id="tab-benchmark" style="background:#21262d;">⚡ Benchmark</button>
   </div>
 
   <div id="mode-analyze">
@@ -162,6 +181,16 @@
     </div>
     <div class="hint">User 同士・Repository 同士を並列比較</div>
     <div id="compareContent" style="margin-top:14px;"></div>
+  </div>
+
+  <div id="mode-benchmark" style="display:none;">
+    <div class="row">
+      <input type="text" id="benchmarkInput"
+        placeholder="https://github.com/torvalds  ·  /torvalds/linux  ·  /pull/1">
+      <button onclick="fetchBenchmark()">Run</button>
+    </div>
+    <div class="hint">Python vs Go のレスポンス速度を計測（キャッシュなし・ライブ計測）</div>
+    <div id="benchmarkContent" style="margin-top:14px;"></div>
   </div>
 </div>
 
@@ -371,12 +400,79 @@ function renderIssue(d) {
     <div class="meta">Opened: ${d.created_at.slice(0,10)}${d.closed_at ? ' · Closed: ' + d.closed_at.slice(0,10) : ''}</div>`);
 }
 
+const _benchHistory = [];
+
+async function fetchBenchmark() {
+  const url = document.getElementById('benchmarkInput').value.trim();
+  if (!url) { showIn('benchmarkContent', '<span class="err">GitHub URL を入力してください</span>'); return; }
+  showIn('benchmarkContent', '<span class="spinner"></span> Running benchmark…');
+  try {
+    const res = await fetch(`${API}/api/benchmark?url=${encodeURIComponent(url)}`);
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || e.error || res.statusText); }
+    const d = await res.json();
+    _benchHistory.unshift(d);
+    renderBenchmark(d);
+  } catch(e) { showIn('benchmarkContent', `<span class="err">Error: ${e.message}</span>`); }
+}
+
+function renderBenchmark(d) {
+  const maxMs = Math.max(d.python_ms, d.go_ms || 0) || 1;
+  const pyPct = (d.python_ms / maxMs * 100).toFixed(1);
+  const goPct = d.go_ms != null ? (d.go_ms / maxMs * 100).toFixed(1) : null;
+
+  const speedupHtml = d.speedup != null
+    ? (() => {
+        const faster = d.speedup > 1;
+        const cls = faster ? 'speedup-fast' : 'speedup-slow';
+        const label = faster ? `Go が ${d.speedup}× 高速` : `Python が ${(1/d.speedup).toFixed(2)}× 高速`;
+        return `<div style="margin-top:14px;font-size:1rem;">${label} — <span class="${cls}">${d.speedup}×</span></div>`;
+      })()
+    : '';
+
+  const goRowHtml = goPct != null
+    ? `<div>
+        <div class="bench-label">Go ⚡ &nbsp;<strong>${d.go_ms} ms</strong></div>
+        <div class="bench-bar-wrap"><div class="bench-bar bench-bar-go" style="width:${goPct}%;">Go ${d.go_ms} ms</div></div>
+      </div>`
+    : `<div class="meta" style="color:#e3b341;margin-top:8px;">Go バックエンド未接続 — <code>GO_BACKEND_URL</code> を設定してください</div>`;
+
+  const historyHtml = _benchHistory.length > 1
+    ? `<div class="section-title" style="margin-top:18px;">履歴</div>
+       <table class="bench-history">
+         <thead><tr><th>URL</th><th>Python ms</th><th>Go ms</th><th>Speedup</th></tr></thead>
+         <tbody>
+           ${_benchHistory.slice(0,8).map(h => `
+             <tr>
+               <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${h.url.replace('https://github.com/','')}</td>
+               <td>${h.python_ms}</td>
+               <td>${h.go_ms ?? '—'}</td>
+               <td>${h.speedup != null ? `<span class="${h.speedup > 1 ? 'speedup-fast' : 'speedup-slow'}">${h.speedup}×</span>` : '—'}</td>
+             </tr>`).join('')}
+         </tbody>
+       </table>`
+    : '';
+
+  showIn('benchmarkContent', `
+    <div class="section-title">${d.type.toUpperCase()} — <span style="color:#58a6ff;font-size:0.75rem;">${d.url}</span></div>
+    <div class="bench-row">
+      <div>
+        <div class="bench-label">Python &nbsp;<strong>${d.python_ms} ms</strong></div>
+        <div class="bench-bar-wrap"><div class="bench-bar bench-bar-python" style="width:${pyPct}%;">Python ${d.python_ms} ms</div></div>
+      </div>
+      ${goRowHtml}
+    </div>
+    ${speedupHtml}
+    ${historyHtml}
+  `);
+}
+
 document.getElementById('urlInput').addEventListener('keydown', e => { if (e.key === 'Enter') fetchAnalyze(); });
 document.getElementById('summaryInput').addEventListener('keydown', e => { if (e.key === 'Enter') fetchSummary(); });
 document.getElementById('compareB').addEventListener('keydown', e => { if (e.key === 'Enter') fetchCompare(); });
+document.getElementById('benchmarkInput').addEventListener('keydown', e => { if (e.key === 'Enter') fetchBenchmark(); });
 
 function setMode(mode) {
-  ['analyze','summary','compare'].forEach(m => {
+  ['analyze','summary','compare','benchmark'].forEach(m => {
     document.getElementById(`mode-${m}`).style.display = m === mode ? '' : 'none';
     document.getElementById(`tab-${m}`).style.background = m === mode ? '#238636' : '#21262d';
   });
