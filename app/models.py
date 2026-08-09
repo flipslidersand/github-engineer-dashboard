@@ -137,6 +137,15 @@ class CrossRepoSummary(BaseModel):
     cached: bool = False
 
 
+class BenchmarkResult(BaseModel):
+    url: str
+    type: str  # "user" | "repo" | "pr" | "issue"
+    python_ms: float
+    go_ms: float | None = None
+    speedup: float | None = None  # python_ms / go_ms; >1 means Go is faster
+    go_available: bool = False
+
+
 class Health(BaseModel):
     status: str
     version: str
