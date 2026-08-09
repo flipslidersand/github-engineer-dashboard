@@ -135,10 +135,25 @@
   .bench-history td:nth-child(2), .bench-history td:nth-child(3) { text-align:right; font-family:monospace; }
   .speedup-fast { color:#3fb950; font-weight:700; }
   .speedup-slow { color:#f85149; font-weight:700; }
+  /* backend toggle */
+  .backend-toggle { display:flex; gap:4px; align-items:center; }
+  .backend-btn {
+    padding:3px 10px; border-radius:4px; border:1px solid #30363d;
+    cursor:pointer; font-size:0.78rem; background:#21262d; color:#8b949e; white-space:nowrap;
+  }
+  .backend-btn.active { background:#1f3d5c; color:#58a6ff; border-color:#1f6feb; }
+  .backend-btn:hover:not(.active) { background:#30363d; color:#c9d1d9; }
 </style>
 </head>
 <body>
-<h1>⚙️ GitHub Engineer Dashboard</h1>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+  <h1 style="margin-bottom:0;">⚙️ GitHub Engineer Dashboard</h1>
+  <div id="backendToggle" class="backend-toggle" style="display:none;">
+    <span style="font-size:0.78rem;color:#8b949e;">Backend:</span>
+    <button class="backend-btn active" id="btn-python" onclick="setBackend('python')">Python</button>
+    <button class="backend-btn" id="btn-go" onclick="setBackend('go')">Go ⚡</button>
+  </div>
+</div>
 
 <div class="card">
   <div style="display:flex;gap:8px;margin-bottom:10px;">
@@ -195,7 +210,8 @@
 </div>
 
 <script>
-const API = '';
+let apiBase = '';
+let goBackendUrl = null;
 const LANG_COLORS = {
   JavaScript:'#f1e05a',TypeScript:'#3178c6',Python:'#3572A5',Go:'#00ADD8',
   Rust:'#dea584',C:'#555555','C++':'#f34b7d','C#':'#178600',Java:'#b07219',
@@ -209,7 +225,7 @@ async function fetchAnalyze() {
   if (!url) { show('<span class="err">GitHub URL を入力してください</span>'); return; }
   show('<span class="spinner"></span> Analyzing…');
   try {
-    const res = await fetch(`${API}/api/analyze?url=${encodeURIComponent(url)}`);
+    const res = await fetch(`${apiBase}/api/analyze?url=${encodeURIComponent(url)}`);
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail || e.error || res.statusText); }
     const result = await res.json();
     const fn = { user: renderUser, repo: renderRepo, pr: renderPR, issue: renderIssue }[result.type];
@@ -407,7 +423,7 @@ async function fetchBenchmark() {
   if (!url) { showIn('benchmarkContent', '<span class="err">GitHub URL を入力してください</span>'); return; }
   showIn('benchmarkContent', '<span class="spinner"></span> Running benchmark…');
   try {
-    const res = await fetch(`${API}/api/benchmark?url=${encodeURIComponent(url)}`);
+    const res = await fetch(`${apiBase}/api/benchmark?url=${encodeURIComponent(url)}`);
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail || e.error || res.statusText); }
     const d = await res.json();
     _benchHistory.unshift(d);
@@ -466,6 +482,29 @@ function renderBenchmark(d) {
   `);
 }
 
+async function initConfig() {
+  try {
+    const cfg = await fetch('/api/config').then(r => r.json());
+    if (cfg.go_backend_url) {
+      goBackendUrl = cfg.go_backend_url;
+      document.getElementById('backendToggle').style.display = 'flex';
+    }
+  } catch (_) {}
+}
+
+function setBackend(which) {
+  if (which === 'go' && goBackendUrl) {
+    apiBase = goBackendUrl;
+  } else {
+    apiBase = '';
+    which = 'python';
+  }
+  ['python','go'].forEach(b => {
+    document.getElementById(`btn-${b}`).classList.toggle('active', b === which);
+  });
+  show(''); showIn('summaryContent', ''); showIn('compareContent', ''); showIn('benchmarkContent', '');
+}
+
 document.getElementById('urlInput').addEventListener('keydown', e => { if (e.key === 'Enter') fetchAnalyze(); });
 document.getElementById('summaryInput').addEventListener('keydown', e => { if (e.key === 'Enter') fetchSummary(); });
 document.getElementById('compareB').addEventListener('keydown', e => { if (e.key === 'Enter') fetchCompare(); });
@@ -484,7 +523,7 @@ async function fetchSummary() {
   if (!url) { showIn('summaryContent','<span class="err">URL を入力してください</span>'); return; }
   showIn('summaryContent','<span class="spinner"></span> Loading…');
   try {
-    const res = await fetch(`${API}/api/summary?url=${encodeURIComponent(url)}&exclude_forks=${excludeForks}`);
+    const res = await fetch(`${apiBase}/api/summary?url=${encodeURIComponent(url)}&exclude_forks=${excludeForks}`);
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail || e.error || res.statusText); }
     renderSummary(await res.json());
   } catch(e) { showIn('summaryContent',`<span class="err">Error: ${e.message}</span>`); }
@@ -526,8 +565,8 @@ async function fetchCompare() {
   showIn('compareContent','<span class="spinner"></span> Loading…');
   try {
     const [rA, rB] = await Promise.all([
-      fetch(`${API}/api/analyze?url=${encodeURIComponent(urlA)}`).then(r => { if(!r.ok) throw new Error(urlA); return r.json(); }),
-      fetch(`${API}/api/analyze?url=${encodeURIComponent(urlB)}`).then(r => { if(!r.ok) throw new Error(urlB); return r.json(); }),
+      fetch(`${apiBase}/api/analyze?url=${encodeURIComponent(urlA)}`).then(r => { if(!r.ok) throw new Error(urlA); return r.json(); }),
+      fetch(`${apiBase}/api/analyze?url=${encodeURIComponent(urlB)}`).then(r => { if(!r.ok) throw new Error(urlB); return r.json(); }),
     ]);
     if (rA.type !== rB.type) {
       showIn('compareContent','<span class="err">同じURLタイプ同士を比較してください（User vs User / Repo vs Repo）</span>');
@@ -536,6 +575,8 @@ async function fetchCompare() {
     renderCompare(rA, rB);
   } catch(e) { showIn('compareContent',`<span class="err">Error: ${e.message}</span>`); }
 }
+
+initConfig();
 
 function renderCompare(rA, rB) {
   const type = rA.type;
