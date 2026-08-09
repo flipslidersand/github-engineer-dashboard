@@ -29,6 +29,7 @@ from .config import Settings
 from .github_client import GitHubClient, GitHubError
 from .models import (
     AnalyzeResult,
+    AppConfig,
     BenchmarkResult,
     CrossRepoSummary,
     Health,
@@ -140,6 +141,10 @@ def _register_routes(app: FastAPI) -> None:
     @app.get("/healthz", response_model=Health, tags=["meta"])
     def healthz() -> Health:
         return Health(status="ok", version=__version__)
+
+    @app.get("/api/config", response_model=AppConfig, tags=["meta"])
+    def config(settings: Settings = Depends(get_settings)) -> AppConfig:
+        return AppConfig(go_backend_url=settings.go_backend_url)
 
     @app.get("/api/rate-limit", response_model=RateLimit, tags=["github"])
     def rate_limit(client: GitHubClient = Depends(get_client)) -> RateLimit:

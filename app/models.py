@@ -137,6 +137,10 @@ class CrossRepoSummary(BaseModel):
     cached: bool = False
 
 
+class AppConfig(BaseModel):
+    go_backend_url: str | None = None
+
+
 class BenchmarkResult(BaseModel):
     url: str
     type: str  # "user" | "repo" | "pr" | "issue"
