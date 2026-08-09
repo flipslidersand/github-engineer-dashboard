@@ -48,10 +48,14 @@ class RepoInfo(BaseModel):
     forks: int
     open_issues: int
     language: str | None = None
+    license: str | None = None
     topics: list[str] = []
     updated_at: str
     contributors: list[Contributor] = []
     languages: dict[str, int] = {}
+    latest_release: str | None = None
+    latest_release_at: str | None = None
+    commits_last_30d: int | None = None
     cached: bool = False
 
 

@@ -109,6 +109,28 @@ class GitHubClient:
         except GitHubError:
             languages = {}
 
+        try:
+            rel = self._get(f"/repos/{username}/{repo}/releases/latest").json()
+            latest_release = rel.get("tag_name")
+            latest_release_at = rel.get("published_at")
+        except GitHubError:
+            latest_release = None
+            latest_release_at = None
+
+        try:
+            participation = self._get(
+                f"/repos/{username}/{repo}/stats/participation"
+            ).json()
+            # all[52] = weekly commit counts; last 4 weeks ≈ 30 days
+            all_weeks = participation.get("all", [])
+            commits_last_30d = sum(all_weeks[-4:]) if len(all_weeks) >= 4 else None
+        except GitHubError:
+            commits_last_30d = None
+
+        license_name = None
+        if r.get("license") and isinstance(r["license"], dict):
+            license_name = r["license"].get("spdx_id") or r["license"].get("name")
+
         return {
             "owner": r["owner"]["login"],
             "name": r["name"],
@@ -118,10 +140,14 @@ class GitHubClient:
             "forks": r.get("forks_count", 0),
             "open_issues": r.get("open_issues_count", 0),
             "language": r.get("language"),
+            "license": license_name,
             "topics": r.get("topics", []),
             "updated_at": r.get("updated_at", ""),
             "contributors": contributors,
             "languages": languages,
+            "latest_release": latest_release,
+            "latest_release_at": latest_release_at,
+            "commits_last_30d": commits_last_30d,
         }
 
     def get_pr(self, username: str, repo: str, number: int) -> dict:
