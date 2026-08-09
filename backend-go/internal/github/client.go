@@ -391,24 +391,26 @@ func (c *Client) GetPR(username, repo string, number int) (*model.PRInfo, error)
 
 	base := fmt.Sprintf("/repos/%s/%s/pulls/%d", username, repo, number)
 
-	data, err := c.get(base)
-	if err != nil {
-		return nil, err
-	}
-	var pr ghPR
-	if err := json.Unmarshal(data, &pr); err != nil {
-		return nil, err
-	}
-
 	var (
+		prData  []byte
 		reviews []ghReview
 		files   []ghFile
+		prErr   error
 		wg      sync.WaitGroup
 	)
-	wg.Add(2)
+	wg.Add(3)
+	go func() { defer wg.Done(); prData, prErr = c.get(base) }()
 	go func() { defer wg.Done(); c.tryGet(base+"/reviews", &reviews) }()
 	go func() { defer wg.Done(); c.tryGet(base+"/files?per_page=30", &files) }()
 	wg.Wait()
+
+	if prErr != nil {
+		return nil, prErr
+	}
+	var pr ghPR
+	if err := json.Unmarshal(prData, &pr); err != nil {
+		return nil, err
+	}
 
 	reviewerSet := map[string]bool{}
 	for _, rv := range reviews {
