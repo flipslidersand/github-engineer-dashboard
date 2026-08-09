@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 from collections import Counter
 from typing import Optional
 
@@ -46,6 +47,13 @@ class GitHubClient:
             raise GitHubError(resp.status_code, message)
         return resp
 
+    def _try_get_json(self, path: str):
+        """Return JSON on success, None on GitHubError."""
+        try:
+            return self._get(path).json()
+        except GitHubError:
+            return None
+
     def get_rate_limit(self) -> dict:
         """Return the core rate-limit block: limit/remaining/used/reset."""
         data = self._get("/rate_limit").json()
@@ -53,36 +61,35 @@ class GitHubClient:
 
     def get_user_activity(self, username: str) -> dict:
         """Aggregate a user's profile with a summary of recent public events."""
-        user = self._get(f"/users/{username}").json()
-        events = self._get(f"/users/{username}/events/public").json()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            f_user = pool.submit(self._get, f"/users/{username}")
+            f_events = pool.submit(self._get, f"/users/{username}/events/public")
+            f_repos = pool.submit(self._try_get_json, f"/users/{username}/repos?per_page=100")
+            user = f_user.result().json()
+            events = f_events.result().json()
+            repos = f_repos.result() or []
 
         counts = Counter(e.get("type") or "Unknown" for e in events)
 
-        try:
-            repos = self._get(f"/users/{username}/repos?per_page=100").json()
-            lang_counts: Counter = Counter()
-            total_stars = 0
-            recent_forks = []
-            for r in repos:
-                if not isinstance(r, dict):
-                    continue
+        lang_counts: Counter = Counter()
+        total_stars = 0
+        recent_forks = []
+        for r in repos:
+            if not isinstance(r, dict):
+                continue
+            if not r.get("fork"):
                 total_stars += r.get("stargazers_count", 0)
-                if not r.get("fork"):
-                    if r.get("language"):
-                        lang_counts[r["language"]] += 1
-                else:
-                    recent_forks.append({
-                        "name": r["name"],
-                        "full_name": r.get("full_name", ""),
-                        "stars": r.get("stargazers_count", 0),
-                        "updated_at": r.get("updated_at", ""),
-                    })
-            repo_languages = dict(lang_counts.most_common(8))
-            recent_forks = sorted(recent_forks, key=lambda x: x["updated_at"], reverse=True)[:3]
-        except GitHubError:
-            repo_languages = {}
-            total_stars = 0
-            recent_forks = []
+                if r.get("language"):
+                    lang_counts[r["language"]] += 1
+            else:
+                recent_forks.append({
+                    "name": r["name"],
+                    "full_name": r.get("full_name", ""),
+                    "stars": r.get("stargazers_count", 0),
+                    "updated_at": r.get("updated_at", ""),
+                })
+        repo_languages = dict(lang_counts.most_common(8))
+        recent_forks = sorted(recent_forks, key=lambda x: x["updated_at"], reverse=True)[:3]
 
         return {
             "username": user["login"],
@@ -105,51 +112,35 @@ class GitHubClient:
     def get_repo(self, username: str, repo: str) -> dict:
         """Return structured data for a repository including contributors and languages."""
         r = self._get(f"/repos/{username}/{repo}").json()
+        base = f"/repos/{username}/{repo}"
 
-        try:
-            raw_contributors = self._get(
-                f"/repos/{username}/{repo}/contributors?per_page=5"
-            ).json()
-            contributors = [
-                {
-                    "username": c["login"],
-                    "contributions": c["contributions"],
-                    "avatar_url": c.get("avatar_url", ""),
-                }
-                for c in raw_contributors
-                if isinstance(c, dict) and "login" in c
-            ]
-        except GitHubError:
-            contributors = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            f_contrib = pool.submit(self._try_get_json, f"{base}/contributors?per_page=5")
+            f_langs = pool.submit(self._try_get_json, f"{base}/languages")
+            f_prs = pool.submit(self._try_get_json, f"{base}/pulls?state=open&per_page=100")
+            f_rel = pool.submit(self._try_get_json, f"{base}/releases/latest")
+            f_part = pool.submit(self._try_get_json, f"{base}/stats/participation")
+            raw_contributors = f_contrib.result()
+            languages = f_langs.result() or {}
+            open_prs_raw = f_prs.result()
+            rel = f_rel.result()
+            participation = f_part.result()
 
-        try:
-            languages = self._get(f"/repos/{username}/{repo}/languages").json()
-        except GitHubError:
-            languages = {}
-
-        try:
-            open_prs = self._get(f"/repos/{username}/{repo}/pulls?state=open&per_page=100").json()
-            open_pr_count = len(open_prs) if isinstance(open_prs, list) else 0
-        except GitHubError:
-            open_pr_count = 0
-
-        try:
-            rel = self._get(f"/repos/{username}/{repo}/releases/latest").json()
-            latest_release = rel.get("tag_name")
-            latest_release_at = rel.get("published_at")
-        except GitHubError:
-            latest_release = None
-            latest_release_at = None
-
-        try:
-            participation = self._get(
-                f"/repos/{username}/{repo}/stats/participation"
-            ).json()
-            # all[52] = weekly commit counts; last 4 weeks ≈ 30 days
-            all_weeks = participation.get("all", [])
-            commits_last_30d = sum(all_weeks[-4:]) if len(all_weeks) >= 4 else None
-        except GitHubError:
-            commits_last_30d = None
+        contributors = [
+            {
+                "username": c["login"],
+                "contributions": c["contributions"],
+                "avatar_url": c.get("avatar_url", ""),
+            }
+            for c in (raw_contributors or [])
+            if isinstance(c, dict) and "login" in c
+        ]
+        open_pr_count = len(open_prs_raw) if isinstance(open_prs_raw, list) else 0
+        latest_release = rel.get("tag_name") if rel else None
+        latest_release_at = rel.get("published_at") if rel else None
+        all_weeks = participation.get("all", []) if participation else []
+        # all[52] = weekly commit counts; last 4 weeks ≈ 30 days
+        commits_last_30d = sum(all_weeks[-4:]) if len(all_weeks) >= 4 else None
 
         license_name = None
         if r.get("license") and isinstance(r["license"], dict):
@@ -188,9 +179,8 @@ class GitHubClient:
 
         review_wait_hours = None
         if reviews_raw:
-            first_review_at = min(
-                r["submitted_at"] for r in reviews_raw if r.get("submitted_at")
-            )
+            submitted = [r["submitted_at"] for r in reviews_raw if r.get("submitted_at")]
+            first_review_at = min(submitted) if submitted else None
             try:
                 created = datetime.fromisoformat(pr["created_at"].replace("Z", "+00:00"))
                 reviewed = datetime.fromisoformat(first_review_at.replace("Z", "+00:00"))

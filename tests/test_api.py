@@ -250,7 +250,7 @@ def test_analyze_user_url(client):
     assert d["created_at"] == "2011-01-25T18:44:36Z"
     assert d["repo_languages"]["Python"] == 2
     assert "Go" not in d["repo_languages"]  # fork excluded from language count
-    assert d["total_stars"] == 18  # 10 + 5 + 3 + 0
+    assert d["total_stars"] == 15  # 10 + 5 + 0 (fork excluded)
     assert len(d["recent_forks"]) == 1
     assert d["recent_forks"][0]["full_name"] == "octocat/fork-of-x"
     assert d["cached"] is False
