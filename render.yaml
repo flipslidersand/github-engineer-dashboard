@@ -12,12 +12,37 @@ services:
         value: "3.12"
       - key: GITHUB_TOKEN
         # Render Dashboard で設定（平文コミット禁止）。
-        # 未設定でも起動はするが、/api/* はリクエストごとに X-GitHub-Token が必要。
         sync: false
       - key: CACHE_DB
         value: /tmp/cache.db
       - key: CACHE_TTL_SECONDS
         value: "300"
       - key: CORS_ORIGINS
-        # フロントエンド URL（カンマ区切り）。Render Dashboard で設定。
         sync: false
+      - key: GO_BACKEND_URL
+        fromService:
+          name: github-engineer-dashboard-go
+          type: web
+          property: url
+
+  - type: web
+    name: github-engineer-dashboard-go
+    runtime: go
+    region: oregon
+    plan: free
+    rootDir: backend-go
+    buildCommand: go build -o server .
+    startCommand: ./server
+    healthCheckPath: /healthz
+    envVars:
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: CACHE_DB
+        value: /tmp/cache-go.db
+      - key: GITHUB_API_URL
+        value: https://api.github.com
+      - key: CORS_ORIGINS
+        fromService:
+          name: github-engineer-dashboard-api
+          type: web
+          property: url
