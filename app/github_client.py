@@ -198,13 +198,14 @@ class GitHubClient:
         review_wait_hours = None
         if reviews_raw:
             submitted = [r["submitted_at"] for r in reviews_raw if r.get("submitted_at")]
-            first_review_at = min(submitted) if submitted else None
-            try:
-                created = datetime.fromisoformat(pr["created_at"].replace("Z", "+00:00"))
-                reviewed = datetime.fromisoformat(first_review_at.replace("Z", "+00:00"))
-                review_wait_hours = round((reviewed - created).total_seconds() / 3600, 1)
-            except Exception:
-                pass
+            if submitted:
+                first_review_at = min(submitted)
+                try:
+                    created = datetime.fromisoformat(pr["created_at"].replace("Z", "+00:00"))
+                    reviewed = datetime.fromisoformat(first_review_at.replace("Z", "+00:00"))
+                    review_wait_hours = round((reviewed - created).total_seconds() / 3600, 1)
+                except Exception:
+                    pass
 
         changed_files_detail = [
             {

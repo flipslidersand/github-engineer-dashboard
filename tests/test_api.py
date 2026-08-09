@@ -124,6 +124,9 @@ def _mock_github(counter: dict) -> GitHubClient:
             )
         if path == "/repos/torvalds/linux/pulls/1/reviews":
             return httpx.Response(200, json=[])
+        if path == "/repos/torvalds/linux/pulls/2/reviews":
+            # Reviews exist but none have submitted_at (e.g. PENDING state)
+            return httpx.Response(200, json=[{"user": {"login": "reviewer"}, "state": "PENDING"}])
         if path == "/repos/torvalds/linux/pulls/1" and request.headers.get("accept", "").endswith(".diff"):
             return httpx.Response(200, text="diff --git a/foo.py b/foo.py\n+print('hello')\n")
         if path == "/repos/torvalds/linux/issues/5":
@@ -300,6 +303,32 @@ def test_analyze_pr_url(client):
     assert d["changed_files_detail"][0]["filename"] == "kernel/sched.c"
     assert d["review_wait_hours"] is None  # no reviews in mock
     assert d["cached"] is False
+
+
+def test_analyze_pr_pending_reviews_no_submitted_at(tmp_path):
+    """reviews_raw が非空でも submitted_at が全件欠如していても review_wait_hours=None で返る。"""
+    from app.github_client import GitHubClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/repos/torvalds/linux/pulls/2":
+            return httpx.Response(200, json={
+                "number": 2, "title": "Pending PR", "state": "open",
+                "user": {"login": "octocat"}, "base": {"ref": "main"},
+                "head": {"ref": "feat/x"}, "additions": 1, "deletions": 0,
+                "changed_files": 1, "comments": 0, "review_comments": 0,
+                "created_at": "2026-08-01T00:00:00Z", "merged_at": None,
+            })
+        if path == "/repos/torvalds/linux/pulls/2/reviews":
+            return httpx.Response(200, json=[{"user": {"login": "reviewer"}, "state": "PENDING"}])
+        if path == "/repos/torvalds/linux/pulls/2/files":
+            return httpx.Response(200, json=[])
+        return httpx.Response(404, json={"message": "not found"})
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    client = GitHubClient("token", client=http)
+    result = client.get_pr("torvalds", "linux", 2)
+    assert result["review_wait_hours"] is None
 
 
 def test_analyze_issue_url(client):
