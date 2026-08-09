@@ -39,6 +39,8 @@ services:
         sync: false
       - key: CACHE_DB
         value: /tmp/cache-go.db
+      - key: CACHE_TTL_SECONDS
+        value: "300"
       - key: GITHUB_API_URL
         value: https://api.github.com
       - key: CORS_ORIGINS
