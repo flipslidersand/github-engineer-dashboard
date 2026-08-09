@@ -424,17 +424,23 @@ func (c *Client) GetPR(username, repo string, number int) (*model.PRInfo, error)
 	}
 
 	var reviewWaitHours *float64
-	var earliest string
+	var earliest time.Time
 	for _, rv := range reviews {
-		if rv.SubmittedAt != "" && (earliest == "" || rv.SubmittedAt < earliest) {
-			earliest = rv.SubmittedAt
+		if rv.SubmittedAt == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, rv.SubmittedAt)
+		if err != nil {
+			continue
+		}
+		if earliest.IsZero() || t.Before(earliest) {
+			earliest = t
 		}
 	}
-	if earliest != "" {
-		created, err1 := time.Parse(time.RFC3339, pr.CreatedAt)
-		reviewed, err2 := time.Parse(time.RFC3339, earliest)
-		if err1 == nil && err2 == nil {
-			h := math.Round(reviewed.Sub(created).Hours()*10) / 10
+	if !earliest.IsZero() {
+		created, err := time.Parse(time.RFC3339, pr.CreatedAt)
+		if err == nil {
+			h := math.Round(earliest.Sub(created).Hours()*10) / 10
 			reviewWaitHours = &h
 		}
 	}
