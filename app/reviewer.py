@@ -56,12 +56,19 @@ def review_diff_ollama(diff: str, base_url: str, model: str) -> str:
             {"role": "user", "content": f"```diff\n{_truncate(diff)}\n```"},
         ],
     }
-    resp = httpx.post(
-        f"{base_url.rstrip('/')}/api/chat",
-        json=payload,
-        timeout=120.0,
-    )
-    resp.raise_for_status()
+    try:
+        resp = httpx.post(
+            f"{base_url.rstrip('/')}/api/chat",
+            json=payload,
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+    except httpx.TimeoutException:
+        raise RuntimeError("Ollama request timed out (120 s).")
+    except httpx.ConnectError:
+        raise RuntimeError(f"Cannot connect to Ollama at {base_url}.")
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(f"Ollama returned HTTP {exc.response.status_code}.")
     body = resp.json()
     if "error" in body:
         raise RuntimeError(f"Ollama error: {body['error']}")

@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -16,7 +17,7 @@ import (
 func main() {
 	port := getenv("PORT", "8080")
 	cacheDB := getenv("CACHE_DB", "cache-go.db")
-	ttl := 300
+	ttl := getenvi("CACHE_TTL_SECONDS", 300)
 
 	c, err := cache.New(cacheDB, ttl)
 	if err != nil {
@@ -45,6 +46,15 @@ func main() {
 func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getenvi(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
 	}
 	return fallback
 }
