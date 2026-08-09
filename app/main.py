@@ -38,7 +38,7 @@ from .models import (
     ReviewResult,
     UserActivity,
 )
-from .reviewer import review_diff
+from .reviewer import review_diff, review_diff_ollama
 from .url_parser import UrlType, parse_github_url
 
 _STATIC_DIR = pathlib.Path(__file__).parent / "static"
@@ -258,10 +258,10 @@ def _register_routes(app: FastAPI) -> None:
         cache: SQLiteCache = Depends(get_cache),
         settings: Settings = Depends(get_settings),
     ) -> ReviewResult:
-        if not settings.anthropic_api_key:
+        if not settings.anthropic_api_key and not settings.ollama_base_url:
             raise HTTPException(
                 status_code=503,
-                detail="AI review unavailable: ANTHROPIC_API_KEY not configured.",
+                detail="AI review unavailable: set ANTHROPIC_API_KEY or OLLAMA_BASE_URL.",
             )
 
         parsed = parse_github_url(url)
@@ -279,7 +279,10 @@ def _register_routes(app: FastAPI) -> None:
 
         pr_meta = client.get_pr(username, repo, number)
         diff = client.get_pr_diff(username, repo, number)
-        markdown = review_diff(diff, settings.anthropic_api_key)
+        if settings.anthropic_api_key:
+            markdown = review_diff(diff, settings.anthropic_api_key)
+        else:
+            markdown = review_diff_ollama(diff, settings.ollama_base_url, settings.ollama_model)
 
         raw = {
             "url": url,

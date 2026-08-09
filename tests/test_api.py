@@ -9,11 +9,19 @@ from app.github_client import GitHubClient
 from app.main import create_app, get_client, require_token
 
 
-def _settings(tmp_path, *, anthropic_key: str | None = None) -> Settings:
+def _settings(
+    tmp_path,
+    *,
+    anthropic_key: str | None = None,
+    ollama_url: str | None = None,
+    ollama_model: str = "qwen2.5-coder:7b",
+) -> Settings:
     return Settings(
         github_api_url="https://api.github.com",
-        github_token=None,  # force header-based auth
+        github_token=None,
         anthropic_api_key=anthropic_key,
+        ollama_base_url=ollama_url,
+        ollama_model=ollama_model,
         cache_db=str(tmp_path / "cache.db"),
         cache_ttl_seconds=300,
         cors_origins=("*",),
@@ -420,8 +428,8 @@ def test_review_requires_pr_url(review_client):
     assert r.status_code == 422
 
 
-def test_review_unavailable_without_api_key(tmp_path):
-    app = create_app(_settings(tmp_path, anthropic_key=None))
+def test_review_unavailable_without_any_key(tmp_path):
+    app = create_app(_settings(tmp_path, anthropic_key=None, ollama_url=None))
     counter: dict = {}
 
     def override_client(_token: str = Depends(require_token)):
@@ -438,3 +446,26 @@ def test_review_unavailable_without_api_key(tmp_path):
             headers={"X-GitHub-Token": "abc"},
         )
     assert r.status_code == 503
+
+
+def test_review_ollama_fallback(tmp_path):
+    app = create_app(_settings(tmp_path, anthropic_key=None, ollama_url="http://localhost:11434"))
+    counter: dict = {}
+
+    def override_client(_token: str = Depends(require_token)):
+        gh = _mock_github(counter)
+        try:
+            yield gh
+        finally:
+            gh.close()
+
+    app.dependency_overrides[get_client] = override_client
+    with TestClient(app) as c:
+        with patch("app.main.review_diff_ollama", return_value="## Summary\nOllama review.") as mock_ol:
+            r = c.get(
+                "/api/review?url=https://github.com/torvalds/linux/pull/1",
+                headers={"X-GitHub-Token": "abc"},
+            )
+    assert r.status_code == 200
+    assert r.json()["markdown"] == "## Summary\nOllama review."
+    mock_ol.assert_called_once()
