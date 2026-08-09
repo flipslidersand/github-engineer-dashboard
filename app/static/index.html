@@ -123,14 +123,46 @@
 <h1>⚙️ GitHub Engineer Dashboard</h1>
 
 <div class="card">
-  <div class="row">
-    <input type="text" id="urlInput"
-      placeholder="https://github.com/torvalds  ·  /torvalds/linux  ·  /torvalds/linux/pull/1  ·  /issues/1"
-      autofocus>
-    <button onclick="fetchAnalyze()">Analyze</button>
+  <div style="display:flex;gap:8px;margin-bottom:10px;">
+    <button onclick="setMode('analyze')" id="tab-analyze" style="background:#238636;">Analyze</button>
+    <button onclick="setMode('summary')" id="tab-summary" style="background:#21262d;">Summary</button>
+    <button onclick="setMode('compare')" id="tab-compare" style="background:#21262d;">Compare</button>
   </div>
-  <div class="hint">User · Repository · Pull Request · Issue に対応</div>
-  <div id="analyzeContent" style="margin-top:14px;"></div>
+
+  <div id="mode-analyze">
+    <div class="row">
+      <input type="text" id="urlInput"
+        placeholder="https://github.com/torvalds  ·  /torvalds/linux  ·  /torvalds/linux/pull/1  ·  /issues/1"
+        autofocus>
+      <button onclick="fetchAnalyze()">Analyze</button>
+    </div>
+    <div class="hint">User · Repository · Pull Request · Issue に対応</div>
+    <div id="analyzeContent" style="margin-top:14px;"></div>
+  </div>
+
+  <div id="mode-summary" style="display:none;">
+    <div class="row">
+      <input type="text" id="summaryInput" placeholder="https://github.com/torvalds  ·  /orgs/github">
+      <label style="white-space:nowrap;font-size:0.85rem;color:#8b949e;display:flex;align-items:center;gap:4px;">
+        <input type="checkbox" id="excludeForks"> フォーク除外
+      </label>
+      <button onclick="fetchSummary()">Summary</button>
+    </div>
+    <div class="hint">User・Organization の全リポジトリを集計</div>
+    <div id="summaryContent" style="margin-top:14px;"></div>
+  </div>
+
+  <div id="mode-compare" style="display:none;">
+    <div class="row" style="margin-bottom:8px;">
+      <input type="text" id="compareA" placeholder="URL A  (User or Repository)">
+    </div>
+    <div class="row">
+      <input type="text" id="compareB" placeholder="URL B  (User or Repository)">
+      <button onclick="fetchCompare()">Compare</button>
+    </div>
+    <div class="hint">User 同士・Repository 同士を並列比較</div>
+    <div id="compareContent" style="margin-top:14px;"></div>
+  </div>
 </div>
 
 <script>
@@ -321,9 +353,128 @@ function renderIssue(d) {
     <div class="meta">Opened: ${d.created_at.slice(0,10)}${d.closed_at ? ' · Closed: ' + d.closed_at.slice(0,10) : ''}</div>`);
 }
 
-document.getElementById('urlInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') fetchAnalyze();
-});
+document.getElementById('urlInput').addEventListener('keydown', e => { if (e.key === 'Enter') fetchAnalyze(); });
+document.getElementById('summaryInput').addEventListener('keydown', e => { if (e.key === 'Enter') fetchSummary(); });
+document.getElementById('compareB').addEventListener('keydown', e => { if (e.key === 'Enter') fetchCompare(); });
+
+function setMode(mode) {
+  ['analyze','summary','compare'].forEach(m => {
+    document.getElementById(`mode-${m}`).style.display = m === mode ? '' : 'none';
+    document.getElementById(`tab-${m}`).style.background = m === mode ? '#238636' : '#21262d';
+  });
+}
+
+async function fetchSummary() {
+  const url = document.getElementById('summaryInput').value.trim();
+  const excludeForks = document.getElementById('excludeForks').checked;
+  if (!url) { showIn('summaryContent','<span class="err">URL を入力してください</span>'); return; }
+  showIn('summaryContent','<span class="spinner"></span> Loading…');
+  try {
+    const res = await fetch(`${API}/api/summary?url=${encodeURIComponent(url)}&exclude_forks=${excludeForks}`);
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || e.error || res.statusText); }
+    renderSummary(await res.json());
+  } catch(e) { showIn('summaryContent',`<span class="err">Error: ${e.message}</span>`); }
+}
+
+function showIn(id, html) { document.getElementById(id).innerHTML = html; }
+
+function renderSummary(d) {
+  const total = Object.values(d.language_distribution).reduce((a,b)=>a+b,0)||1;
+  const langBar = Object.entries(d.language_distribution).map(([l,n])=>
+    `<div style="width:${(n/total*100).toFixed(1)}%;background:${langColor(l)};"></div>`).join('');
+  const langLegend = Object.entries(d.language_distribution).slice(0,10).map(([l,n])=>
+    `<span class="lang-item"><span class="lang-dot" style="background:${langColor(l)};"></span>${l} (${n})</span>`).join('');
+  const cache = d.cached ? '<span class="badge cached">cached</span>' : '<span class="badge">live</span>';
+  const trunc = d.truncated ? ' <span style="color:#e3b341;font-size:0.75rem;">(上限超過・一部のみ)</span>' : '';
+  showIn('summaryContent',`
+    <div>
+      <strong style="font-size:1.1rem;">${d.owner}</strong>
+      <span class="type-badge">${d.owner_type}</span>${cache}
+      ${d.forks_excluded ? '<span class="type-badge" style="color:#e3b341;">フォーク除外</span>' : ''}
+      ${trunc}
+    </div>
+    <div class="stats" style="margin-top:12px;">
+      <div class="stat-item"><div class="value">${d.repo_count}</div><div class="label">Repos</div></div>
+      <div class="stat-item"><div class="value">⭐ ${d.total_stars.toLocaleString()}</div><div class="label">Total Stars</div></div>
+      <div class="stat-item"><div class="value">🍴 ${d.total_forks.toLocaleString()}</div><div class="label">Total Forks</div></div>
+    </div>
+    ${Object.keys(d.language_distribution).length ? `
+      <div class="section-title">Language Distribution</div>
+      <div class="lang-bar">${langBar}</div>
+      <div class="lang-legend">${langLegend}</div>` : ''}
+  `);
+}
+
+async function fetchCompare() {
+  const urlA = document.getElementById('compareA').value.trim();
+  const urlB = document.getElementById('compareB').value.trim();
+  if (!urlA || !urlB) { showIn('compareContent','<span class="err">URL A と B を入力してください</span>'); return; }
+  showIn('compareContent','<span class="spinner"></span> Loading…');
+  try {
+    const [rA, rB] = await Promise.all([
+      fetch(`${API}/api/analyze?url=${encodeURIComponent(urlA)}`).then(r => { if(!r.ok) throw new Error(urlA); return r.json(); }),
+      fetch(`${API}/api/analyze?url=${encodeURIComponent(urlB)}`).then(r => { if(!r.ok) throw new Error(urlB); return r.json(); }),
+    ]);
+    if (rA.type !== rB.type) {
+      showIn('compareContent','<span class="err">同じURLタイプ同士を比較してください（User vs User / Repo vs Repo）</span>');
+      return;
+    }
+    renderCompare(rA, rB);
+  } catch(e) { showIn('compareContent',`<span class="err">Error: ${e.message}</span>`); }
+}
+
+function renderCompare(rA, rB) {
+  const type = rA.type;
+  const dA = rA.data, dB = rB.data;
+
+  function row(label, a, b, highlight) {
+    const better = highlight ? (parseFloat(a) > parseFloat(b) ? 'A' : parseFloat(b) > parseFloat(a) ? 'B' : '') : '';
+    const sA = better === 'A' ? 'color:#3fb950;font-weight:700;' : '';
+    const sB = better === 'B' ? 'color:#3fb950;font-weight:700;' : '';
+    return `<tr>
+      <td style="text-align:right;padding:4px 12px;${sA}">${a}</td>
+      <td style="text-align:center;padding:4px 8px;color:#8b949e;font-size:0.75rem;">${label}</td>
+      <td style="text-align:left;padding:4px 12px;${sB}">${b}</td>
+    </tr>`;
+  }
+
+  let rows = '';
+  if (type === 'user') {
+    rows = [
+      row('Repos', dA.public_repos, dB.public_repos, true),
+      row('Followers', dA.followers, dB.followers, true),
+      row('Following', dA.following, dB.following, false),
+      row('Events', dA.total_events, dB.total_events, true),
+    ].join('');
+  } else if (type === 'repo') {
+    rows = [
+      row('Stars', dA.stars.toLocaleString(), dB.stars.toLocaleString(), true),
+      row('Forks', dA.forks.toLocaleString(), dB.forks.toLocaleString(), true),
+      row('Open Issues', dA.open_issues, dB.open_issues, false),
+      row('Commits (30d)', dA.commits_last_30d ?? '—', dB.commits_last_30d ?? '—', true),
+    ].join('');
+  } else {
+    showIn('compareContent','<span class="err">User または Repository の比較のみ対応しています</span>');
+    return;
+  }
+
+  const nameA = type === 'user' ? (dA.name || dA.username) : dA.full_name;
+  const nameB = type === 'user' ? (dB.name || dB.username) : dB.full_name;
+
+  showIn('compareContent',`
+    <div class="section-title">Compare · ${type}</div>
+    <table style="width:100%;border-collapse:collapse;margin-top:8px;">
+      <thead>
+        <tr>
+          <th style="text-align:right;padding:4px 12px;color:#58a6ff;">${nameA}</th>
+          <th style="text-align:center;padding:4px 8px;"></th>
+          <th style="text-align:left;padding:4px 12px;color:#58a6ff;">${nameB}</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `);
+}
 </script>
 </body>
 </html>
