@@ -29,6 +29,7 @@ from .config import Settings
 from .github_client import GitHubClient, GitHubError
 from .models import (
     AnalyzeResult,
+    BenchmarkResult,
     CrossRepoSummary,
     Health,
     IssueInfo,
@@ -288,6 +289,67 @@ def _register_routes(app: FastAPI) -> None:
         }
         cache.set(cache_key, raw)
         return ReviewResult(**{**raw, "cached": False})
+
+    @app.get("/api/benchmark", response_model=BenchmarkResult, tags=["github"])
+    def benchmark(
+        url: str,
+        token: str = Depends(require_token),
+        client: GitHubClient = Depends(get_client),
+        settings: Settings = Depends(get_settings),
+    ) -> BenchmarkResult:
+        import time
+
+        import httpx as _httpx
+
+        parsed = parse_github_url(url)
+        if parsed.type == UrlType.USER:
+            typ = "user"
+            fetch = lambda: client.get_user_activity(parsed.params["username"])
+        elif parsed.type == UrlType.REPO:
+            typ = "repo"
+            fetch = lambda: client.get_repo(parsed.params["username"], parsed.params["repo"])
+        elif parsed.type == UrlType.PR:
+            typ = "pr"
+            fetch = lambda: client.get_pr(
+                parsed.params["username"], parsed.params["repo"], int(parsed.params["number"])
+            )
+        elif parsed.type == UrlType.ISSUE:
+            typ = "issue"
+            fetch = lambda: client.get_issue(
+                parsed.params["username"], parsed.params["repo"], int(parsed.params["number"])
+            )
+        else:
+            raise HTTPException(status_code=422, detail="Unsupported URL type for benchmark.")
+
+        t0 = time.perf_counter()
+        fetch()
+        python_ms = round((time.perf_counter() - t0) * 1000, 1)
+
+        go_ms: float | None = None
+        go_available = bool(settings.go_backend_url)
+        if settings.go_backend_url:
+            try:
+                t1 = time.perf_counter()
+                resp = _httpx.get(
+                    f"{settings.go_backend_url}/api/analyze",
+                    params={"url": url},
+                    headers={"X-GitHub-Token": token},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                go_ms = round((time.perf_counter() - t1) * 1000, 1)
+            except Exception:
+                go_ms = None
+
+        speedup = round(python_ms / go_ms, 2) if go_ms else None
+        return BenchmarkResult(
+            url=url,
+            type=typ,
+            python_ms=python_ms,
+            go_ms=go_ms,
+            speedup=speedup,
+            go_available=go_available,
+        )
 
 
 # Module-level app for `uvicorn app.main:app`.

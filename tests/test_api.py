@@ -22,6 +22,7 @@ def _settings(
         anthropic_api_key=anthropic_key,
         ollama_base_url=ollama_url,
         ollama_model=ollama_model,
+        go_backend_url=None,
         cache_db=str(tmp_path / "cache.db"),
         cache_ttl_seconds=300,
         cors_origins=("*",),
@@ -490,3 +491,29 @@ def test_review_ollama_fallback(tmp_path):
     assert r.status_code == 200
     assert r.json()["markdown"] == "## Summary\nOllama review."
     mock_ol.assert_called_once()
+
+
+def test_benchmark_user(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/benchmark?url=https://github.com/octocat", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["type"] == "user"
+    assert isinstance(body["python_ms"], float)
+    assert body["go_ms"] is None
+    assert body["go_available"] is False
+
+
+def test_benchmark_repo(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/benchmark?url=https://github.com/torvalds/linux", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["type"] == "repo"
+    assert body["python_ms"] > 0
+
+
+def test_benchmark_unsupported_url(client):
+    h = {"X-GitHub-Token": "abc"}
+    r = client.get("/api/benchmark?url=https://example.com/foo", headers=h)
+    assert r.status_code == 422
