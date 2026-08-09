@@ -517,3 +517,23 @@ def test_benchmark_unsupported_url(client):
     h = {"X-GitHub-Token": "abc"}
     r = client.get("/api/benchmark?url=https://example.com/foo", headers=h)
     assert r.status_code == 422
+
+
+def test_config_no_go_backend(tmp_path):
+    settings = _settings(tmp_path)
+    app = create_app(settings)
+    c = TestClient(app)
+    r = c.get("/api/config")
+    assert r.status_code == 200
+    assert r.json() == {"go_backend_url": None}
+
+
+def test_config_with_go_backend(tmp_path):
+    import dataclasses
+    base = _settings(tmp_path)
+    settings = dataclasses.replace(base, go_backend_url="http://localhost:8080")
+    app = create_app(settings)
+    c = TestClient(app)
+    r = c.get("/api/config")
+    assert r.status_code == 200
+    assert r.json() == {"go_backend_url": "http://localhost:8080"}
