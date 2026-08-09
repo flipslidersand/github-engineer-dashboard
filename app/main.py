@@ -331,7 +331,6 @@ def _register_routes(app: FastAPI) -> None:
         python_ms = round((time.perf_counter() - t0) * 1000, 1)
 
         go_ms: float | None = None
-        go_available = bool(settings.go_backend_url)
         if settings.go_backend_url:
             try:
                 t1 = time.perf_counter()
@@ -346,7 +345,8 @@ def _register_routes(app: FastAPI) -> None:
             except Exception:
                 go_ms = None
 
-        speedup = round(python_ms / go_ms, 2) if go_ms else None
+        go_available = go_ms is not None
+        speedup = round(python_ms / go_ms, 2) if go_ms is not None and go_ms > 0 else None
         return BenchmarkResult(
             url=url,
             type=typ,

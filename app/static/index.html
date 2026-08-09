@@ -380,7 +380,7 @@ async function fetchReview() {
   btn.textContent = '⏳ Reviewing…';
   sec.innerHTML = '';
   try {
-    const res = await fetch(`${API}/api/review?url=${encodeURIComponent(url)}`);
+    const res = await fetch(`/api/review?url=${encodeURIComponent(url)}`);
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail || e.error || res.statusText); }
     const r = await res.json();
     const cached = r.cached ? '<span class="badge cached">cached</span>' : '<span class="badge">live</span>';
@@ -423,7 +423,7 @@ async function fetchBenchmark() {
   if (!url) { showIn('benchmarkContent', '<span class="err">GitHub URL を入力してください</span>'); return; }
   showIn('benchmarkContent', '<span class="spinner"></span> Running benchmark…');
   try {
-    const res = await fetch(`${apiBase}/api/benchmark?url=${encodeURIComponent(url)}`);
+    const res = await fetch(`/api/benchmark?url=${encodeURIComponent(url)}`);
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail || e.error || res.statusText); }
     const d = await res.json();
     _benchHistory.unshift(d);
@@ -440,8 +440,9 @@ function renderBenchmark(d) {
     ? (() => {
         const faster = d.speedup > 1;
         const cls = faster ? 'speedup-fast' : 'speedup-slow';
-        const label = faster ? `Go が ${d.speedup}× 高速` : `Python が ${(1/d.speedup).toFixed(2)}× 高速`;
-        return `<div style="margin-top:14px;font-size:1rem;">${label} — <span class="${cls}">${d.speedup}×</span></div>`;
+        const mult = faster ? d.speedup : (1/d.speedup).toFixed(2);
+        const label = faster ? `Go が ${mult}× 高速` : `Python が ${mult}× 高速`;
+        return `<div style="margin-top:14px;font-size:1rem;">${label} — <span class="${cls}">${mult}×</span></div>`;
       })()
     : '';
 
@@ -502,6 +503,7 @@ function setBackend(which) {
   ['python','go'].forEach(b => {
     document.getElementById(`btn-${b}`).classList.toggle('active', b === which);
   });
+  _benchHistory.length = 0;
   show(''); showIn('summaryContent', ''); showIn('compareContent', ''); showIn('benchmarkContent', '');
 }
 
