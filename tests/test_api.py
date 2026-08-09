@@ -56,14 +56,6 @@ def _mock_github(counter: dict) -> GitHubClient:
             )
         if path == "/users/octocat/events/public":
             return httpx.Response(200, json=[{"type": "PushEvent"}])
-        if path == "/users/octocat/repos":
-            return httpx.Response(200, json=[
-                {"language": "Python", "fork": False},
-                {"language": "Python", "fork": False},
-                {"language": "Go", "fork": False},
-                {"language": None, "fork": False},
-                {"language": "Python", "fork": True},
-            ])
         if path == "/repos/torvalds/linux":
             return httpx.Response(
                 200,
@@ -87,6 +79,10 @@ def _mock_github(counter: dict) -> GitHubClient:
             )
         if path == "/repos/torvalds/linux/languages":
             return httpx.Response(200, json={"C": 900000, "Makefile": 50000})
+        if path == "/repos/torvalds/linux/releases/latest":
+            return httpx.Response(200, json={"tag_name": "v6.9", "published_at": "2026-07-01T00:00:00Z"})
+        if path == "/repos/torvalds/linux/stats/participation":
+            return httpx.Response(200, json={"all": [10] * 52})
         if path == "/repos/torvalds/linux/pulls/1":
             return httpx.Response(
                 200,
@@ -126,6 +122,14 @@ def _mock_github(counter: dict) -> GitHubClient:
                 },
             )
         if path == "/users/octocat/repos":
+            # get_user_activity uses ?type=owner; _aggregate_repo_list uses ?page=N
+            if request.url.params.get("type") == "owner":
+                return httpx.Response(200, json=[
+                    {"name": "a", "stargazers_count": 10, "forks_count": 2, "language": "Python", "fork": False},
+                    {"name": "b", "stargazers_count": 5, "forks_count": 0, "language": "Python", "fork": False},
+                    {"name": "c", "stargazers_count": 3, "forks_count": 1, "language": "Go", "fork": True},
+                    {"name": "d", "stargazers_count": 0, "forks_count": 0, "language": None, "fork": False},
+                ])
             if request.url.params.get("page") != "1":
                 return httpx.Response(200, json=[])
             return httpx.Response(
@@ -226,8 +230,7 @@ def test_analyze_user_url(client):
     assert d["location"] == "San Francisco"
     assert d["created_at"] == "2011-01-25T18:44:36Z"
     assert d["repo_languages"]["Python"] == 2
-    assert d["repo_languages"]["Go"] == 1
-    assert "Python" in d["repo_languages"]
+    assert "Go" not in d["repo_languages"]  # fork excluded
     assert d["cached"] is False
 
 
@@ -237,12 +240,16 @@ def test_analyze_repo_url(client):
     assert r.status_code == 200
     body = r.json()
     assert body["type"] == "repo"
-    assert body["data"]["full_name"] == "torvalds/linux"
-    assert body["data"]["stars"] == 185000
-    assert body["data"]["language"] == "C"
-    assert body["data"]["contributors"][0]["username"] == "torvalds"
-    assert "C" in body["data"]["languages"]
-    assert body["data"]["cached"] is False
+    d = body["data"]
+    assert d["full_name"] == "torvalds/linux"
+    assert d["stars"] == 185000
+    assert d["language"] == "C"
+    assert d["contributors"][0]["username"] == "torvalds"
+    assert "C" in d["languages"]
+    assert d["latest_release"] == "v6.9"
+    assert d["latest_release_at"] == "2026-07-01T00:00:00Z"
+    assert d["commits_last_30d"] == 40  # sum of last 4 weeks (10*4)
+    assert d["cached"] is False
 
 
 def test_analyze_repo_caching(client):

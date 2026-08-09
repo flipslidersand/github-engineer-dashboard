@@ -215,17 +215,24 @@ function renderRepo(d) {
   const topicHtml = (d.topics||[]).length
     ? `<div class="topics">${d.topics.map(t=>`<span class="topic">${t}</span>`).join('')}</div>` : '';
 
+  const repoMeta = [
+    d.license ? `📄 ${d.license}` : '',
+    d.latest_release ? `🏷️ ${d.latest_release}${d.latest_release_at ? ' (' + d.latest_release_at.slice(0,10) + ')' : ''}` : '',
+  ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+
   show(`
     <div>
       <span style="font-size:1.2rem;font-weight:700;color:#58a6ff;">${d.full_name}</span>
       ${badges(d,'repo')}
       ${d.description ? `<div style="font-size:0.875rem;color:#8b949e;margin-top:4px;">${d.description}</div>` : ''}
+      ${repoMeta ? `<div class="meta" style="margin-top:6px;">${repoMeta}</div>` : ''}
     </div>
     <div class="stats" style="margin-top:12px;">
       <div class="stat-item"><div class="value">⭐ ${d.stars.toLocaleString()}</div><div class="label">Stars</div></div>
       <div class="stat-item"><div class="value">🍴 ${d.forks.toLocaleString()}</div><div class="label">Forks</div></div>
       <div class="stat-item"><div class="value">${d.open_issues}</div><div class="label">Open Issues</div></div>
       ${d.language ? `<div class="stat-item"><div class="value">${d.language}</div><div class="label">Language</div></div>` : ''}
+      ${d.commits_last_30d != null ? `<div class="stat-item"><div class="value">${d.commits_last_30d}</div><div class="label">Commits (30d)</div></div>` : ''}
     </div>
     ${topicHtml}
     ${Object.keys(d.languages).length ? `
