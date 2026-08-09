@@ -101,7 +101,7 @@ func (d *Deps) analyze(w http.ResponseWriter, r *http.Request) {
 	parsed := parseGitHubURL(rawURL)
 	client := newClient(r, d)
 
-	writeAnalyze := func(typ string, v any, wasCached bool, err error) {
+	writeAnalyze := func(typ string, v any, err error) {
 		if err != nil {
 			writeGitHubError(w, err)
 			return
@@ -117,7 +117,7 @@ func (d *Deps) analyze(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			v.Cached = cached
 		}
-		writeAnalyze("user", v, cached, err)
+		writeAnalyze("user", v, err)
 
 	case urlTypeRepo:
 		u, repo := parsed.username, parsed.repo
@@ -127,7 +127,7 @@ func (d *Deps) analyze(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			v.Cached = cached
 		}
-		writeAnalyze("repo", v, cached, err)
+		writeAnalyze("repo", v, err)
 
 	case urlTypePR:
 		u, repo, num := parsed.username, parsed.repo, parsed.number
@@ -137,7 +137,7 @@ func (d *Deps) analyze(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			v.Cached = cached
 		}
-		writeAnalyze("pr", v, cached, err)
+		writeAnalyze("pr", v, err)
 
 	case urlTypeIssue:
 		u, repo, num := parsed.username, parsed.repo, parsed.number
@@ -147,7 +147,7 @@ func (d *Deps) analyze(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			v.Cached = cached
 		}
-		writeAnalyze("issue", v, cached, err)
+		writeAnalyze("issue", v, err)
 
 	default:
 		writeError(w, http.StatusUnprocessableEntity,
