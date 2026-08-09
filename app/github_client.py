@@ -48,10 +48,10 @@ class GitHubClient:
         return resp
 
     def _try_get_json(self, path: str):
-        """Return JSON on success, None on GitHubError."""
+        """Return JSON on success, None on any error (GitHubError or network)."""
         try:
             return self._get(path).json()
-        except GitHubError:
+        except Exception:
             return None
 
     def get_rate_limit(self) -> dict:
@@ -170,11 +170,15 @@ class GitHubClient:
         """Return structured data for a pull request."""
         from datetime import datetime, timezone
 
-        pr = self._get(f"/repos/{username}/{repo}/pulls/{number}").json()
+        base = f"/repos/{username}/{repo}/pulls/{number}"
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            f_pr = pool.submit(self._get, base)
+            f_reviews = pool.submit(self._try_get_json, f"{base}/reviews")
+            f_files = pool.submit(self._try_get_json, f"{base}/files?per_page=30")
+            pr = f_pr.result().json()
+            reviews_raw = f_reviews.result() or []
+            files_raw = f_files.result() or []
 
-        reviews_raw = self._get(
-            f"/repos/{username}/{repo}/pulls/{number}/reviews"
-        ).json()
         reviewers = list({r["user"]["login"] for r in reviews_raw if r.get("user")})
 
         review_wait_hours = None
@@ -188,21 +192,15 @@ class GitHubClient:
             except Exception:
                 pass
 
-        try:
-            files_raw = self._get(
-                f"/repos/{username}/{repo}/pulls/{number}/files?per_page=30"
-            ).json()
-            changed_files_detail = [
-                {
-                    "filename": f["filename"],
-                    "additions": f.get("additions", 0),
-                    "deletions": f.get("deletions", 0),
-                }
-                for f in files_raw
-                if isinstance(f, dict)
-            ]
-        except GitHubError:
-            changed_files_detail = []
+        changed_files_detail = [
+            {
+                "filename": f["filename"],
+                "additions": f.get("additions", 0),
+                "deletions": f.get("deletions", 0),
+            }
+            for f in files_raw
+            if isinstance(f, dict)
+        ]
 
         state = "merged" if pr.get("merged_at") else pr.get("state", "open")
         return {

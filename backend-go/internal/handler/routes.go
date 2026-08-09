@@ -80,23 +80,15 @@ func (d *Deps) rateLimit(w http.ResponseWriter, r *http.Request) {
 
 func (d *Deps) userActivity(w http.ResponseWriter, r *http.Request) {
 	username := chi.URLParam(r, "username")
-	key := "activity:" + strings.ToLower(username)
-
-	var cached model.UserActivity
-	if d.Cache.Get(key, &cached) {
-		cached.Cached = true
-		writeJSON(w, http.StatusOK, cached)
-		return
-	}
-
 	client := newClient(r, d)
-	data, err := client.GetUserActivity(username)
+	v, cached, err := fromCache(d.Cache, "activity:"+strings.ToLower(username),
+		func() (*model.UserActivity, error) { return client.GetUserActivity(username) })
 	if err != nil {
 		writeGitHubError(w, err)
 		return
 	}
-	_ = d.Cache.Set(key, data)
-	writeJSON(w, http.StatusOK, data)
+	v.Cached = cached
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (d *Deps) analyze(w http.ResponseWriter, r *http.Request) {
@@ -109,73 +101,53 @@ func (d *Deps) analyze(w http.ResponseWriter, r *http.Request) {
 	parsed := parseGitHubURL(rawURL)
 	client := newClient(r, d)
 
+	writeAnalyze := func(typ string, v any, wasCached bool, err error) {
+		if err != nil {
+			writeGitHubError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, model.AnalyzeResult{Type: typ, URL: rawURL, Data: v})
+	}
+
 	switch parsed.typ {
 	case urlTypeUser:
-		username := parsed.username
-		key := "activity:" + strings.ToLower(username)
-		var cached model.UserActivity
-		if d.Cache.Get(key, &cached) {
-			cached.Cached = true
-			writeJSON(w, http.StatusOK, model.AnalyzeResult{Type: "user", URL: rawURL, Data: cached})
-			return
+		u := parsed.username
+		v, cached, err := fromCache(d.Cache, "activity:"+strings.ToLower(u),
+			func() (*model.UserActivity, error) { return client.GetUserActivity(u) })
+		if err == nil {
+			v.Cached = cached
 		}
-		data, err := client.GetUserActivity(username)
-		if err != nil {
-			writeGitHubError(w, err)
-			return
-		}
-		_ = d.Cache.Set(key, data)
-		writeJSON(w, http.StatusOK, model.AnalyzeResult{Type: "user", URL: rawURL, Data: data})
+		writeAnalyze("user", v, cached, err)
 
 	case urlTypeRepo:
-		key := fmt.Sprintf("repo:%s/%s", strings.ToLower(parsed.username), strings.ToLower(parsed.repo))
-		var cached model.RepoInfo
-		if d.Cache.Get(key, &cached) {
-			cached.Cached = true
-			writeJSON(w, http.StatusOK, model.AnalyzeResult{Type: "repo", URL: rawURL, Data: cached})
-			return
+		u, repo := parsed.username, parsed.repo
+		key := fmt.Sprintf("repo:%s/%s", strings.ToLower(u), strings.ToLower(repo))
+		v, cached, err := fromCache(d.Cache, key,
+			func() (*model.RepoInfo, error) { return client.GetRepo(u, repo) })
+		if err == nil {
+			v.Cached = cached
 		}
-		data, err := client.GetRepo(parsed.username, parsed.repo)
-		if err != nil {
-			writeGitHubError(w, err)
-			return
-		}
-		_ = d.Cache.Set(key, data)
-		writeJSON(w, http.StatusOK, model.AnalyzeResult{Type: "repo", URL: rawURL, Data: data})
+		writeAnalyze("repo", v, cached, err)
 
 	case urlTypePR:
-		key := fmt.Sprintf("pr:%s/%s/%d",
-			strings.ToLower(parsed.username), strings.ToLower(parsed.repo), parsed.number)
-		var cached model.PRInfo
-		if d.Cache.Get(key, &cached) {
-			cached.Cached = true
-			writeJSON(w, http.StatusOK, model.AnalyzeResult{Type: "pr", URL: rawURL, Data: cached})
-			return
+		u, repo, num := parsed.username, parsed.repo, parsed.number
+		key := fmt.Sprintf("pr:%s/%s/%d", strings.ToLower(u), strings.ToLower(repo), num)
+		v, cached, err := fromCache(d.Cache, key,
+			func() (*model.PRInfo, error) { return client.GetPR(u, repo, num) })
+		if err == nil {
+			v.Cached = cached
 		}
-		data, err := client.GetPR(parsed.username, parsed.repo, parsed.number)
-		if err != nil {
-			writeGitHubError(w, err)
-			return
-		}
-		_ = d.Cache.Set(key, data)
-		writeJSON(w, http.StatusOK, model.AnalyzeResult{Type: "pr", URL: rawURL, Data: data})
+		writeAnalyze("pr", v, cached, err)
 
 	case urlTypeIssue:
-		key := fmt.Sprintf("issue:%s/%s/%d",
-			strings.ToLower(parsed.username), strings.ToLower(parsed.repo), parsed.number)
-		var cached model.IssueInfo
-		if d.Cache.Get(key, &cached) {
-			cached.Cached = true
-			writeJSON(w, http.StatusOK, model.AnalyzeResult{Type: "issue", URL: rawURL, Data: cached})
-			return
+		u, repo, num := parsed.username, parsed.repo, parsed.number
+		key := fmt.Sprintf("issue:%s/%s/%d", strings.ToLower(u), strings.ToLower(repo), num)
+		v, cached, err := fromCache(d.Cache, key,
+			func() (*model.IssueInfo, error) { return client.GetIssue(u, repo, num) })
+		if err == nil {
+			v.Cached = cached
 		}
-		data, err := client.GetIssue(parsed.username, parsed.repo, parsed.number)
-		if err != nil {
-			writeGitHubError(w, err)
-			return
-		}
-		_ = d.Cache.Set(key, data)
-		writeJSON(w, http.StatusOK, model.AnalyzeResult{Type: "issue", URL: rawURL, Data: data})
+		writeAnalyze("issue", v, cached, err)
 
 	default:
 		writeError(w, http.StatusUnprocessableEntity,
@@ -190,12 +162,7 @@ func (d *Deps) summary(w http.ResponseWriter, r *http.Request) {
 	parsed := parseGitHubURL(rawURL)
 	client := newClient(r, d)
 
-	var (
-		ownerKey string
-		data     *model.CrossRepoSummary
-		err      error
-	)
-
+	var ownerKey string
 	switch parsed.typ {
 	case urlTypeUser:
 		ownerKey = "user:" + strings.ToLower(parsed.username)
@@ -208,24 +175,24 @@ func (d *Deps) summary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := fmt.Sprintf("summary:%s:forks=%d", ownerKey, boolToInt(excludeForks))
-	var cached model.CrossRepoSummary
-	if d.Cache.Get(key, &cached) {
-		cached.Cached = true
-		writeJSON(w, http.StatusOK, cached)
-		return
+	var fetchFn func() (*model.CrossRepoSummary, error)
+	if parsed.typ == urlTypeUser {
+		fetchFn = func() (*model.CrossRepoSummary, error) {
+			return client.GetUserReposSummary(parsed.username, excludeForks)
+		}
+	} else {
+		fetchFn = func() (*model.CrossRepoSummary, error) {
+			return client.GetOrgReposSummary(parsed.org, excludeForks)
+		}
 	}
 
-	if parsed.typ == urlTypeUser {
-		data, err = client.GetUserReposSummary(parsed.username, excludeForks)
-	} else {
-		data, err = client.GetOrgReposSummary(parsed.org, excludeForks)
-	}
+	v, cached, err := fromCache(d.Cache, key, fetchFn)
 	if err != nil {
 		writeGitHubError(w, err)
 		return
 	}
-	_ = d.Cache.Set(key, data)
-	writeJSON(w, http.StatusOK, data)
+	v.Cached = cached
+	writeJSON(w, http.StatusOK, v)
 }
 
 // ── URL parser ────────────────────────────────────────────────────────────────
@@ -290,6 +257,23 @@ func parseGitHubURL(raw string) parsedURL {
 		return parsedURL{typ: urlTypeRepo, username: parts[0], repo: parts[1]}
 	}
 	return parsedURL{typ: urlTypeUnknown}
+}
+
+// ── cache helper ──────────────────────────────────────────────────────────────
+
+// fromCache returns cached data (wasCached=true) or calls fetch, stores result,
+// and returns fresh data (wasCached=false). On fetch error returns nil, false, err.
+func fromCache[T any](c *cache.Cache, key string, fetch func() (*T, error)) (*T, bool, error) {
+	var dst T
+	if c.Get(key, &dst) {
+		return &dst, true, nil
+	}
+	v, err := fetch()
+	if err != nil {
+		return nil, false, err
+	}
+	_ = c.Set(key, v)
+	return v, false, nil
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

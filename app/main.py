@@ -185,16 +185,17 @@ def _register_routes(app: FastAPI) -> None:
             )
 
         key = f"summary:{owner_key}:forks={int(exclude_forks)}"
-        cached_data = cache.get(key)
-        if cached_data is not None:
-            return CrossRepoSummary(**{**cached_data, "cached": True})
-
         if parsed.type == UrlType.USER:
-            raw = client.get_user_repos_summary(owner, exclude_forks=exclude_forks)
-        else:
-            raw = client.get_org_repos_summary(owner, exclude_forks=exclude_forks)
-        cache.set(key, raw)
-        return CrossRepoSummary(**{**raw, "cached": False})
+            return _cache_fetch(
+                cache, key,
+                lambda: client.get_user_repos_summary(owner, exclude_forks=exclude_forks),
+                CrossRepoSummary,
+            )
+        return _cache_fetch(
+            cache, key,
+            lambda: client.get_org_repos_summary(owner, exclude_forks=exclude_forks),
+            CrossRepoSummary,
+        )
 
     @app.get("/api/analyze", response_model=AnalyzeResult, tags=["github"])
     def analyze(
