@@ -482,6 +482,28 @@ def test_review_ollama_fallback(tmp_path):
     mock_ol.assert_called_once()
 
 
+def test_review_ollama_connect_error_returns_502(tmp_path):
+    app = create_app(_settings(tmp_path, anthropic_key=None, ollama_url="http://localhost:11434"))
+    counter: dict = {}
+
+    def override_client(_token: str = Depends(require_token)):
+        gh = _mock_github(counter)
+        try:
+            yield gh
+        finally:
+            gh.close()
+
+    app.dependency_overrides[get_client] = override_client
+    with TestClient(app) as c:
+        with patch("app.main.review_diff_ollama", side_effect=RuntimeError("Cannot connect to Ollama at http://localhost:11434.")):
+            r = c.get(
+                "/api/review?url=https://github.com/torvalds/linux/pull/1",
+                headers={"X-GitHub-Token": "abc"},
+            )
+    assert r.status_code == 502
+    assert "Cannot connect" in r.json()["detail"]
+
+
 def test_benchmark_user(client):
     h = {"X-GitHub-Token": "abc"}
     r = client.get("/api/benchmark?url=https://github.com/octocat", headers=h)

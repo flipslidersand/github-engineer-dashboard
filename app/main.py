@@ -282,10 +282,13 @@ def _register_routes(app: FastAPI) -> None:
 
         pr_meta = client.get_pr(username, repo, number)
         diff = client.get_pr_diff(username, repo, number)
-        if settings.anthropic_api_key:
-            markdown = review_diff(diff, settings.anthropic_api_key)
-        else:
-            markdown = review_diff_ollama(diff, settings.ollama_base_url, settings.ollama_model)
+        try:
+            if settings.anthropic_api_key:
+                markdown = review_diff(diff, settings.anthropic_api_key)
+            else:
+                markdown = review_diff_ollama(diff, settings.ollama_base_url, settings.ollama_model)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
 
         raw = {
             "url": url,
