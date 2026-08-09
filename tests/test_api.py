@@ -142,25 +142,14 @@ def _mock_github(counter: dict) -> GitHubClient:
                 },
             )
         if path == "/users/octocat/repos":
-            # get_user_activity uses no type param now; _aggregate_repo_list uses ?page=N
-            if request.url.params.get("page") is None and request.url.params.get("type") is None:
-                return httpx.Response(200, json=[
-                    {"name": "a", "full_name": "octocat/a", "stargazers_count": 10, "forks_count": 2, "language": "Python", "fork": False, "updated_at": "2026-08-01T00:00:00Z"},
-                    {"name": "b", "full_name": "octocat/b", "stargazers_count": 5, "forks_count": 0, "language": "Python", "fork": False, "updated_at": "2026-07-01T00:00:00Z"},
-                    {"name": "fork-of-x", "full_name": "octocat/fork-of-x", "stargazers_count": 3, "forks_count": 1, "language": "Go", "fork": True, "updated_at": "2026-06-01T00:00:00Z"},
-                    {"name": "d", "full_name": "octocat/d", "stargazers_count": 0, "forks_count": 0, "language": None, "fork": False, "updated_at": "2026-05-01T00:00:00Z"},
-                ])
             if request.url.params.get("page") != "1":
                 return httpx.Response(200, json=[])
-            return httpx.Response(
-                200,
-                json=[
-                    {"name": "a", "stargazers_count": 10, "forks_count": 2, "language": "Python", "fork": False},
-                    {"name": "b", "stargazers_count": 5, "forks_count": 0, "language": "Python", "fork": False},
-                    {"name": "c", "stargazers_count": 3, "forks_count": 1, "language": "Go", "fork": True},
-                    {"name": "d", "stargazers_count": 0, "forks_count": 0, "language": None, "fork": False},
-                ],
-            )
+            return httpx.Response(200, json=[
+                {"name": "a", "full_name": "octocat/a", "stargazers_count": 10, "forks_count": 2, "language": "Python", "fork": False, "updated_at": "2026-08-01T00:00:00Z"},
+                {"name": "b", "full_name": "octocat/b", "stargazers_count": 5, "forks_count": 0, "language": "Python", "fork": False, "updated_at": "2026-07-01T00:00:00Z"},
+                {"name": "fork-of-x", "full_name": "octocat/fork-of-x", "stargazers_count": 3, "forks_count": 1, "language": "Go", "fork": True, "updated_at": "2026-06-01T00:00:00Z"},
+                {"name": "d", "full_name": "octocat/d", "stargazers_count": 0, "forks_count": 0, "language": None, "fork": False, "updated_at": "2026-05-01T00:00:00Z"},
+            ])
         if path == "/orgs/acme/repos":
             if request.url.params.get("page") != "1":
                 return httpx.Response(200, json=[])

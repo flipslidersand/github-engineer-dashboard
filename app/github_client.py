@@ -59,12 +59,26 @@ class GitHubClient:
         data = self._get("/rate_limit").json()
         return data["resources"]["core"]
 
+    def _get_all_user_repos(self, username: str) -> list:
+        """Paginate /users/{username}/repos up to _REPOS_MAX_PAGES pages."""
+        repos: list = []
+        for page in range(1, self._REPOS_MAX_PAGES + 1):
+            batch = self._try_get_json(
+                f"/users/{username}/repos?per_page={self._REPOS_PAGE_SIZE}&page={page}"
+            )
+            if not isinstance(batch, list) or not batch:
+                break
+            repos.extend(batch)
+            if len(batch) < self._REPOS_PAGE_SIZE:
+                break
+        return repos
+
     def get_user_activity(self, username: str) -> dict:
         """Aggregate a user's profile with a summary of recent public events."""
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
             f_user = pool.submit(self._get, f"/users/{username}")
             f_events = pool.submit(self._get, f"/users/{username}/events/public")
-            f_repos = pool.submit(self._try_get_json, f"/users/{username}/repos?per_page=100")
+            f_repos = pool.submit(self._get_all_user_repos, username)
             user = f_user.result().json()
             events = f_events.result().json()
             repos = f_repos.result() or []
