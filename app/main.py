@@ -115,6 +115,19 @@ def get_client(
         client.close()
 
 
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+
+def _cache_fetch(cache, key: str, fetch_fn, model):
+    """Return model from cache, or call fetch_fn(), store, and return fresh."""
+    cached_data = cache.get(key)
+    if cached_data is not None:
+        return model(**{**cached_data, "cached": True})
+    raw = fetch_fn()
+    cache.set(key, raw)
+    return model(**{**raw, "cached": False})
+
+
 # ── routes ────────────────────────────────────────────────────────────────────
 
 
@@ -143,14 +156,12 @@ def _register_routes(app: FastAPI) -> None:
         client: GitHubClient = Depends(get_client),
         cache: SQLiteCache = Depends(get_cache),
     ) -> UserActivity:
-        key = f"activity:{username.lower()}"
-        cached = cache.get(key)
-        if cached is not None:
-            return UserActivity(**{**cached, "cached": True})
-
-        data = client.get_user_activity(username)
-        cache.set(key, data)
-        return UserActivity(**{**data, "cached": False})
+        return _cache_fetch(
+            cache,
+            f"activity:{username.lower()}",
+            lambda: client.get_user_activity(username),
+            UserActivity,
+        )
 
     @app.get("/api/summary", response_model=CrossRepoSummary, tags=["github"])
     def summary(
@@ -195,55 +206,39 @@ def _register_routes(app: FastAPI) -> None:
 
         if parsed.type == UrlType.USER:
             username = parsed.params["username"]
-            key = f"activity:{username.lower()}"
-            cached_data = cache.get(key)
-            if cached_data is not None:
-                data = UserActivity(**{**cached_data, "cached": True})
-            else:
-                raw = client.get_user_activity(username)
-                cache.set(key, raw)
-                data = UserActivity(**{**raw, "cached": False})
+            data = _cache_fetch(
+                cache, f"activity:{username.lower()}",
+                lambda: client.get_user_activity(username), UserActivity,
+            )
             return AnalyzeResult(type="user", url=url, data=data)
 
         if parsed.type == UrlType.REPO:
             username = parsed.params["username"]
             repo = parsed.params["repo"]
-            key = f"repo:{username.lower()}/{repo.lower()}"
-            cached_data = cache.get(key)
-            if cached_data is not None:
-                data = RepoInfo(**{**cached_data, "cached": True})
-            else:
-                raw = client.get_repo(username, repo)
-                cache.set(key, raw)
-                data = RepoInfo(**{**raw, "cached": False})
+            data = _cache_fetch(
+                cache, f"repo:{username.lower()}/{repo.lower()}",
+                lambda: client.get_repo(username, repo), RepoInfo,
+            )
             return AnalyzeResult(type="repo", url=url, data=data)
 
         if parsed.type == UrlType.PR:
             username = parsed.params["username"]
             repo = parsed.params["repo"]
             number = int(parsed.params["number"])
-            key = f"pr:{username.lower()}/{repo.lower()}/{number}"
-            cached_data = cache.get(key)
-            if cached_data is not None:
-                data = PRInfo(**{**cached_data, "cached": True})
-            else:
-                raw = client.get_pr(username, repo, number)
-                cache.set(key, raw)
-                data = PRInfo(**{**raw, "cached": False})
+            data = _cache_fetch(
+                cache, f"pr:{username.lower()}/{repo.lower()}/{number}",
+                lambda: client.get_pr(username, repo, number), PRInfo,
+            )
             return AnalyzeResult(type="pr", url=url, data=data)
 
         if parsed.type == UrlType.ISSUE:
             username = parsed.params["username"]
             repo = parsed.params["repo"]
             number = int(parsed.params["number"])
-            key = f"issue:{username.lower()}/{repo.lower()}/{number}"
-            cached_data = cache.get(key)
-            if cached_data is not None:
-                data = IssueInfo(**{**cached_data, "cached": True})
-            else:
-                raw = client.get_issue(username, repo, number)
-                cache.set(key, raw)
-                data = IssueInfo(**{**raw, "cached": False})
+            data = _cache_fetch(
+                cache, f"issue:{username.lower()}/{repo.lower()}/{number}",
+                lambda: client.get_issue(username, repo, number), IssueInfo,
+            )
             return AnalyzeResult(type="issue", url=url, data=data)
 
         raise HTTPException(

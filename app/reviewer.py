@@ -40,7 +40,10 @@ def review_diff(diff: str, api_key: str) -> str:
         system=_SYSTEM,
         messages=[{"role": "user", "content": f"```diff\n{_truncate(diff)}\n```"}],
     )
-    return message.content[0].text
+    blocks = message.content
+    if not blocks or not hasattr(blocks[0], "text"):
+        return "*(no review content returned)*"
+    return blocks[0].text
 
 
 def review_diff_ollama(diff: str, base_url: str, model: str) -> str:
@@ -59,4 +62,7 @@ def review_diff_ollama(diff: str, base_url: str, model: str) -> str:
         timeout=120.0,
     )
     resp.raise_for_status()
-    return resp.json()["message"]["content"]
+    body = resp.json()
+    if "error" in body:
+        raise RuntimeError(f"Ollama error: {body['error']}")
+    return body["message"]["content"]
