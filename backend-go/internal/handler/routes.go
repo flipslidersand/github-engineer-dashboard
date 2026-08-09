@@ -4,12 +4,10 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -34,7 +32,6 @@ func Register(r chi.Router, d *Deps) {
 	r.Get("/api/users/{username}/activity", d.requireToken(d.userActivity))
 	r.Get("/api/analyze", d.requireToken(d.analyze))
 	r.Get("/api/summary", d.requireToken(d.summary))
-	r.Get("/api/benchmark", d.requireToken(d.benchmark))
 }
 
 // ── middleware ────────────────────────────────────────────────────────────────
@@ -196,51 +193,6 @@ func (d *Deps) summary(w http.ResponseWriter, r *http.Request) {
 	}
 	v.Cached = cached
 	writeJSON(w, http.StatusOK, v)
-}
-
-func (d *Deps) benchmark(w http.ResponseWriter, r *http.Request) {
-	rawURL := r.URL.Query().Get("url")
-	if rawURL == "" {
-		writeError(w, http.StatusUnprocessableEntity, "url query parameter required")
-		return
-	}
-
-	parsed := parseGitHubURL(rawURL)
-	client := newClient(r, d)
-
-	var typ string
-	var fetchErr error
-	start := time.Now()
-
-	switch parsed.typ {
-	case urlTypeUser:
-		typ = "user"
-		_, fetchErr = client.GetUserActivity(parsed.username)
-	case urlTypeRepo:
-		typ = "repo"
-		_, fetchErr = client.GetRepo(parsed.username, parsed.repo)
-	case urlTypePR:
-		typ = "pr"
-		_, fetchErr = client.GetPR(parsed.username, parsed.repo, parsed.number)
-	case urlTypeIssue:
-		typ = "issue"
-		_, fetchErr = client.GetIssue(parsed.username, parsed.repo, parsed.number)
-	default:
-		writeError(w, http.StatusUnprocessableEntity, "Unsupported URL type for benchmark.")
-		return
-	}
-
-	if fetchErr != nil {
-		writeGitHubError(w, fetchErr)
-		return
-	}
-
-	goMS := math.Round(float64(time.Since(start).Microseconds())/100) / 10
-	writeJSON(w, http.StatusOK, model.BenchmarkResult{
-		URL:  rawURL,
-		Type: typ,
-		GoMS: goMS,
-	})
 }
 
 // ── URL parser ────────────────────────────────────────────────────────────────

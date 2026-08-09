@@ -7,12 +7,6 @@ type Health struct {
 	Version string `json:"version"`
 }
 
-type BenchmarkResult struct {
-	URL    string  `json:"url"`
-	Type   string  `json:"type"` // "user" | "repo" | "pr" | "issue"
-	GoMS   float64 `json:"go_ms"`
-}
-
 type RateLimit struct {
 	Limit     int `json:"limit"`
 	Remaining int `json:"remaining"`
