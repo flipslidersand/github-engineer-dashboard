@@ -64,6 +64,17 @@ def _mock_github(counter: dict) -> GitHubClient:
             )
         if path == "/users/octocat/events/public":
             return httpx.Response(200, json=[{"type": "PushEvent"}])
+        if path == "/repos/torvalds/linux/pulls" and request.url.params.get("state") == "open":
+            return httpx.Response(200, json=[{"number": 1}, {"number": 2}])
+        if path == "/repos/torvalds/linux/pulls/1/files":
+            return httpx.Response(200, json=[
+                {"filename": "kernel/sched.c", "additions": 8, "deletions": 2},
+                {"filename": "include/linux/sched.h", "additions": 2, "deletions": 1},
+            ])
+        if path == "/repos/torvalds/linux/issues/5/timeline":
+            return httpx.Response(200, json=[
+                {"event": "cross-referenced", "source": {"issue": {"number": 99, "pull_request": {"url": "..."}}}},
+            ])
         if path == "/repos/torvalds/linux":
             return httpx.Response(
                 200,
@@ -130,13 +141,13 @@ def _mock_github(counter: dict) -> GitHubClient:
                 },
             )
         if path == "/users/octocat/repos":
-            # get_user_activity uses ?type=owner; _aggregate_repo_list uses ?page=N
-            if request.url.params.get("type") == "owner":
+            # get_user_activity uses no type param now; _aggregate_repo_list uses ?page=N
+            if request.url.params.get("page") is None and request.url.params.get("type") is None:
                 return httpx.Response(200, json=[
-                    {"name": "a", "stargazers_count": 10, "forks_count": 2, "language": "Python", "fork": False},
-                    {"name": "b", "stargazers_count": 5, "forks_count": 0, "language": "Python", "fork": False},
-                    {"name": "c", "stargazers_count": 3, "forks_count": 1, "language": "Go", "fork": True},
-                    {"name": "d", "stargazers_count": 0, "forks_count": 0, "language": None, "fork": False},
+                    {"name": "a", "full_name": "octocat/a", "stargazers_count": 10, "forks_count": 2, "language": "Python", "fork": False, "updated_at": "2026-08-01T00:00:00Z"},
+                    {"name": "b", "full_name": "octocat/b", "stargazers_count": 5, "forks_count": 0, "language": "Python", "fork": False, "updated_at": "2026-07-01T00:00:00Z"},
+                    {"name": "fork-of-x", "full_name": "octocat/fork-of-x", "stargazers_count": 3, "forks_count": 1, "language": "Go", "fork": True, "updated_at": "2026-06-01T00:00:00Z"},
+                    {"name": "d", "full_name": "octocat/d", "stargazers_count": 0, "forks_count": 0, "language": None, "fork": False, "updated_at": "2026-05-01T00:00:00Z"},
                 ])
             if request.url.params.get("page") != "1":
                 return httpx.Response(200, json=[])
@@ -238,7 +249,10 @@ def test_analyze_user_url(client):
     assert d["location"] == "San Francisco"
     assert d["created_at"] == "2011-01-25T18:44:36Z"
     assert d["repo_languages"]["Python"] == 2
-    assert "Go" not in d["repo_languages"]  # fork excluded
+    assert "Go" not in d["repo_languages"]  # fork excluded from language count
+    assert d["total_stars"] == 18  # 10 + 5 + 3 + 0
+    assert len(d["recent_forks"]) == 1
+    assert d["recent_forks"][0]["full_name"] == "octocat/fork-of-x"
     assert d["cached"] is False
 
 
@@ -256,7 +270,8 @@ def test_analyze_repo_url(client):
     assert "C" in d["languages"]
     assert d["latest_release"] == "v6.9"
     assert d["latest_release_at"] == "2026-07-01T00:00:00Z"
-    assert d["commits_last_30d"] == 40  # sum of last 4 weeks (10*4)
+    assert d["commits_last_30d"] == 40
+    assert d["open_pr_count"] == 2
     assert d["cached"] is False
 
 
@@ -286,11 +301,15 @@ def test_analyze_pr_url(client):
     assert r.status_code == 200
     body = r.json()
     assert body["type"] == "pr"
-    assert body["data"]["number"] == 1
-    assert body["data"]["title"] == "Fix bug"
-    assert body["data"]["state"] == "open"
-    assert body["data"]["changed_files"] == 2
-    assert body["data"]["cached"] is False
+    d = body["data"]
+    assert d["number"] == 1
+    assert d["title"] == "Fix bug"
+    assert d["state"] == "open"
+    assert d["changed_files"] == 2
+    assert len(d["changed_files_detail"]) == 2
+    assert d["changed_files_detail"][0]["filename"] == "kernel/sched.c"
+    assert d["review_wait_hours"] is None  # no reviews in mock
+    assert d["cached"] is False
 
 
 def test_analyze_issue_url(client):
@@ -299,10 +318,12 @@ def test_analyze_issue_url(client):
     assert r.status_code == 200
     body = r.json()
     assert body["type"] == "issue"
-    assert body["data"]["number"] == 5
-    assert body["data"]["title"] == "Memory leak"
-    assert body["data"]["labels"] == ["bug"]
-    assert body["data"]["cached"] is False
+    d = body["data"]
+    assert d["number"] == 5
+    assert d["title"] == "Memory leak"
+    assert d["labels"] == ["bug"]
+    assert d["related_prs"] == [99]
+    assert d["cached"] is False
 
 
 # ── /api/summary (Issue #76) ─────────────────────────────────────────────────

@@ -16,6 +16,13 @@ class RateLimit(BaseModel):
     reset: int  # epoch seconds
 
 
+class RecentFork(BaseModel):
+    name: str
+    full_name: str
+    stars: int
+    updated_at: str
+
+
 class UserActivity(BaseModel):
     username: str
     name: str | None = None
@@ -27,9 +34,11 @@ class UserActivity(BaseModel):
     public_repos: int
     followers: int
     following: int
+    total_stars: int = 0
     event_counts: dict[str, int]
     total_events: int
     repo_languages: dict[str, int] = {}
+    recent_forks: list[RecentFork] = []
     cached: bool = False
 
 
@@ -37,6 +46,12 @@ class Contributor(BaseModel):
     username: str
     contributions: int
     avatar_url: str
+
+
+class ChangedFile(BaseModel):
+    filename: str
+    additions: int
+    deletions: int
 
 
 class RepoInfo(BaseModel):
@@ -47,6 +62,7 @@ class RepoInfo(BaseModel):
     stars: int
     forks: int
     open_issues: int
+    open_pr_count: int = 0
     language: str | None = None
     license: str | None = None
     topics: list[str] = []
@@ -72,6 +88,8 @@ class PRInfo(BaseModel):
     comments: int
     review_comments: int
     reviewers: list[str] = []
+    review_wait_hours: float | None = None
+    changed_files_detail: list[ChangedFile] = []
     created_at: str
     merged_at: str | None = None
     cached: bool = False
@@ -85,6 +103,7 @@ class IssueInfo(BaseModel):
     labels: list[str] = []
     assignees: list[str] = []
     comments: int
+    related_prs: list[int] = []
     created_at: str
     closed_at: str | None = None
     cached: bool = False
