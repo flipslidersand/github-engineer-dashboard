@@ -182,7 +182,7 @@ class GitHubClient:
 
     def get_pr(self, username: str, repo: str, number: int) -> dict:
         """Return structured data for a pull request."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         base = f"/repos/{username}/{repo}/pulls/{number}"
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
