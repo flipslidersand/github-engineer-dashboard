@@ -2,7 +2,7 @@ fastapi~=0.139.0
 uvicorn[standard]~=0.51.0
 httpx~=0.28.1
 pydantic~=2.12.5
-anthropic~=0.120.0
+anthropic~=1.11.0
 
 # dev / test
 pytest~=9.1.1
